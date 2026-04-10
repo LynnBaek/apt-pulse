@@ -599,9 +599,12 @@ async function onSidoChange() {
 
   finalCodes.forEach(c => {
     const o = document.createElement('option');
-    o.value = c.code.slice(0, 5); // 앞 5자리 = lawd_cd
-    o.dataset.name = c.name.split(' ').pop();
-    o.textContent = c.name.split(' ').pop(); // "충청북도 청주시 상당구" → "상당구"
+    o.value = c.code.slice(0, 5);
+    // "충청북도 청주시 흥덕구" → "청주시 흥덕구", "충청북도 충주시" → "충주시"
+    const parts = c.name.split(' ');
+    const displayName = parts.slice(1).join(' '); // 시도명 제거
+    o.dataset.name = displayName;
+    o.textContent = displayName;
     sigungu.appendChild(o);
   });
 }
@@ -614,11 +617,10 @@ async function onSigunguChange() {
 
   if (!sigunguCd) return;
 
-  // 지역명 자동입력
+  // 지역명 자동입력 - "충청북도 청주시 흥덕구" 형태로
   const sidoName = sidoEl.selectedOptions[0]?.dataset.name || '';
-  const sgName = sigunguEl.selectedOptions[0]?.dataset.name || '';
-  const shortSido = sidoName.replace('특별시','').replace('광역시','').replace('특별자치시','').replace('특별자치도','').replace('도','');
-  document.getElementById('f_region').value = `${shortSido} ${sgName}`.trim();
+  const sgDisplayName = sigunguEl.selectedOptions[0]?.dataset.name || '';
+  document.getElementById('f_region').value = `${sidoName} ${sgDisplayName}`.trim();
 
   setSelectLoading('f_dong_sel');
   const codes = await fetchLawd({ type: 'dong', sigunguCd });
@@ -626,8 +628,8 @@ async function onSigunguChange() {
   dongSel.innerHTML = '<option value="">읍/면/동 선택</option>';
   codes.filter(c => !c.name.endsWith('시') && !c.name.endsWith('군') && !c.name.endsWith('구')).forEach(c => {
     const o = document.createElement('option');
-    o.value = c.name;
-    o.textContent = c.name;
+    o.value = c.name.split(' ').pop();
+    o.textContent = c.name.split(' ').pop(); // "충청북도 청주시 흥덕구 가경동" → "가경동"
     dongSel.appendChild(o);
   });
 }
@@ -975,7 +977,6 @@ async function fetchRealTrade(aptId) {
   resultEl.innerHTML = '<div class="loading">조회 중...</div>';
 
   if (!apiKey) {
-    // API 키 없으면 네이버 부동산 실거래가 링크 제공
     const complexId = apt?.link ? (apt.link.match(/complexes\/(\d+)/) || [])[1] : null;
     const naverUrl = complexId
       ? `https://new.land.naver.com/complexes/${complexId}?tab=trade`
@@ -992,51 +993,53 @@ async function fetchRealTrade(aptId) {
     return;
   }
 
-  // API 키 있으면 실제 호출
-  const now = new Date();
-  const ym = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`;
-  const prev = new Date(now.getFullYear(), now.getMonth()-5, 1);
-  const ymPrev = `${prev.getFullYear()}${String(prev.getMonth()+1).padStart(2,'0')}`;
+  if (!bcode) {
+    resultEl.innerHTML = '<div class="no-data" style="color:var(--red)">법정동 코드를 입력하세요</div>';
+    return;
+  }
 
   try {
+    // 최근 3개월
     const months = [];
-    for (let m = new Date(prev); m <= now; m.setMonth(m.getMonth()+1)) {
-      months.push(`${m.getFullYear()}${String(m.getMonth()+1).padStart(2,'0')}`);
+    const now = new Date();
+    for (let i = 2; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}`);
     }
 
+    const REALTRADE_FN = 'https://xyervpopuptydcizofow.supabase.co/functions/v1/realtrade';
     const results = [];
-    for (const ym of months.slice(-3)) { // 최근 3개월
-      const url = `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTrade?serviceKey=${encodeURIComponent(apiKey)}&LAWD_CD=${bcode}&DEAL_YMD=${ym}&numOfRows=100&pageNo=1&_type=json`;
-      try {
-        const res = await fetch(url);
-        const json = await res.json();
-        const items = json?.response?.body?.items?.item || [];
-        const arr = Array.isArray(items) ? items : [items];
-        arr.forEach(item => {
-          if (nameQ && !item.아파트?.includes(nameQ.slice(0,4))) return;
-          results.push({
-            date: `${item.년}-${String(item.월).padStart(2,'0')}-${String(item.일).padStart(2,'0')}`,
-            name: item.아파트,
-            area: parseFloat(item.전용면적),
-            price: parseInt((item.거래금액||'').replace(/,/g,'')),
-            floor: item.층,
-            dong: item.법정동,
-          });
+
+    for (const ym of months) {
+      const url = `${REALTRADE_FN}?lawdCd=${bcode}&dealYmd=${ym}&apiKey=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url);
+      const json = await res.json();
+      const items = json?.response?.body?.items?.item || [];
+      const arr = Array.isArray(items) ? items : [items];
+      arr.forEach(item => {
+        if (!item.년) return;
+        if (nameQ && !item.아파트?.includes(nameQ.slice(0,4))) return;
+        results.push({
+          date: `${item.년}-${String(item.월).padStart(2,'0')}-${String(item.일).padStart(2,'0')}`,
+          name: item.아파트,
+          area: parseFloat(item.전용면적),
+          price: parseInt((item.거래금액||'').replace(/,/g,'')),
+          floor: item.층,
         });
-      } catch {}
+      });
     }
 
     results.sort((a,b) => b.date.localeCompare(a.date));
 
     if (results.length === 0) {
-      resultEl.innerHTML = '<div class="no-data">조회된 실거래 데이터가 없습니다. 법정동 코드를 확인하세요.</div>';
+      resultEl.innerHTML = '<div class="no-data">조회된 실거래 데이터가 없습니다.<br>법정동 코드 또는 단지명을 확인하세요.</div>';
       return;
     }
 
     resultEl.innerHTML = `
       <div class="api-result">
         <div class="api-tr hdr"><span>날짜</span><span>단지명</span><span>가격</span><span>면적(㎡)</span><span>층</span></div>
-        ${results.slice(0,20).map(r => `
+        ${results.slice(0,30).map(r => `
         <div class="api-tr" onclick="applyRealTrade(${r.price}, '${r.date}', '${aptId}')">
           <span>${r.date}</span>
           <span style="color:var(--text2)">${r.name||'-'}</span>
@@ -1045,7 +1048,7 @@ async function fetchRealTrade(aptId) {
           <span class="api-info">${r.floor}층</span>
         </div>`).join('')}
       </div>
-      <div style="font-size:10px;color:var(--text3);padding:6px 8px">클릭하면 매매가로 자동 입력됩니다</div>`;
+      <div style="font-size:10px;color:var(--text3);padding:6px 8px">클릭하면 매매가로 자동 입력됩니다 (최근 3개월 ${results.length}건)</div>`;
   } catch (err) {
     resultEl.innerHTML = `<div class="no-data" style="color:var(--red)">오류: ${err.message}</div>`;
   }
