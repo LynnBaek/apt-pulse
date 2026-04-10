@@ -499,13 +499,13 @@ let pendingDates = []; // 아직 데이터 없이 추가된 날짜
 // ── DB 함수 ────────────────────────────────
 async function dbLoadApts() {
   const { data, error } = await sb.from('complexes').select('*').order('name');
-  if (error) { console.error('단지 로드 오류:', error); return []; }
+  if (error) { console.error('단지 로드 오류:', error.message, error.code, error.details, error.hint); return []; }
   return data || [];
 }
 
 async function dbLoadSise() {
   const { data, error } = await sb.from('sise_records').select('*').order('date');
-  if (error) { console.error('시세 로드 오류:', error); return {}; }
+  if (error) { console.error('시세 로드 오류:', error.message, error.code, error.details, error.hint); return {}; }
   const map = {};
   (data || []).forEach(r => {
     if (!map[r.apt_id]) map[r.apt_id] = [];
