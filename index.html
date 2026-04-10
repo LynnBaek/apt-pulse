@@ -385,10 +385,6 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
     </div>
     <div class="form-grid">
       <div class="form-group full">
-        <label>단지명 *</label>
-        <input type="text" id="f_name" placeholder="예: 반석더샵">
-      </div>
-      <div class="form-group">
         <label>시/도 *</label>
         <select id="f_sido" onchange="onSidoChange()">
           <option value="">선택</option>
@@ -405,6 +401,19 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
         <select id="f_dong_sel" onchange="onDongChange()">
           <option value="">선택</option>
         </select>
+      </div>
+      <div class="form-group full" style="display:flex;align-items:flex-end;gap:8px">
+        <div style="flex:1">
+          <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:5px">단지 검색 (동 선택 후)</label>
+          <select id="f_apt_list" onchange="onAptListChange()" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:6px;font-size:13px;font-family:'Noto Sans KR',sans-serif;outline:none">
+            <option value="">동을 먼저 선택하세요</option>
+          </select>
+        </div>
+        <button class="btn btn-outline" style="font-size:11px;flex-shrink:0" onclick="loadAptList()">🔍 단지 조회</button>
+      </div>
+      <div class="form-group full">
+        <label>단지명 *</label>
+        <input type="text" id="f_name" placeholder="단지 조회 후 선택하거나 직접 입력">
       </div>
       <div class="form-group">
         <label>지역명 (필터용) *</label>
@@ -622,17 +631,81 @@ async function onSigunguChange() {
   dongSel.innerHTML = '<option value="">읍/면/동 선택</option>';
   codes.filter(c => !c.name.endsWith('시') && !c.name.endsWith('군') && !c.name.endsWith('구')).forEach(c => {
     const o = document.createElement('option');
-    o.value = c.name.split(' ').pop();
-    o.textContent = c.name.split(' ').pop(); // "충청북도 청주시 흥덕구 가경동" → "가경동"
+    o.value = c.code.slice(0, 5); // 앞 5자리 법정동 코드
+    o.dataset.dongName = c.name.split(' ').pop();
+    o.textContent = c.name.split(' ').pop();
     dongSel.appendChild(o);
   });
 }
 
 function onDongChange() {
-  // f_dong_sel 선택값이 dong
+  // 동 바뀌면 단지 목록 초기화
+  document.getElementById('f_apt_list').innerHTML = '<option value="">🔍 단지 조회 버튼을 누르세요</option>';
+}
+
+async function loadAptList() {
+  const lawdCd = getSigunguCode();
+  const apiKey = localStorage.getItem('rtms_key') || '';
+  const sel = document.getElementById('f_apt_list');
+
+  if (!lawdCd) { toast('동을 먼저 선택하세요', 'err'); return; }
+  if (!apiKey) { toast('실거래가 API 키가 필요합니다. 단지 상세의 API키 입력란에 먼저 입력하세요', 'err'); return; }
+
+  sel.innerHTML = '<option value="">로딩 중...</option>';
+
+  try {
+    const url = `https://xyervpopuptydcizofow.supabase.co/functions/v1/aptlist?lawdCd=${lawdCd}&apiKey=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url);
+    const json = await res.json();
+
+    const resultCode = json?.response?.header?.resultCode;
+    if (resultCode && resultCode !== '00' && resultCode !== '000') {
+      sel.innerHTML = '<option value="">조회 실패 - API 키 확인</option>';
+      toast('단지 조회 실패: ' + json?.response?.header?.resultMsg, 'err');
+      return;
+    }
+
+    const items = json?.response?.body?.items?.item || [];
+    const arr = Array.isArray(items) ? items : (items && Object.keys(items).length ? [items] : []);
+
+    if (arr.length === 0) {
+      sel.innerHTML = '<option value="">해당 동에 단지 없음</option>';
+      return;
+    }
+
+    sel.innerHTML = '<option value="">단지 선택</option>';
+    arr.forEach(item => {
+      const o = document.createElement('option');
+      o.value = JSON.stringify({
+        name: item.아파트명 || item.단지명 || '',
+        year: item.건축년도 ? parseInt(item.건축년도) : null,
+        units: item.총세대수 ? parseInt(item.총세대수) : null,
+      });
+      o.textContent = `${item.아파트명 || item.단지명} (${item.건축년도||'?'}년, ${item.총세대수||'?'}세대)`;
+      sel.appendChild(o);
+    });
+    toast(`${arr.length}개 단지 조회 완료`);
+  } catch(e) {
+    sel.innerHTML = '<option value="">오류 발생</option>';
+    toast('단지 조회 오류: ' + e.message, 'err');
+  }
+}
+
+function onAptListChange() {
+  const sel = document.getElementById('f_apt_list');
+  if (!sel.value) return;
+  try {
+    const data = JSON.parse(sel.value);
+    if (data.name) document.getElementById('f_name').value = data.name;
+    if (data.year) document.getElementById('f_year').value = data.year;
+    if (data.units) document.getElementById('f_units').value = data.units;
+  } catch(e) {}
 }
 
 function getSigunguCode() {
+  // 동이 선택됐으면 동 코드, 아니면 시군구 코드
+  const dongVal = document.getElementById('f_dong_sel')?.value;
+  if (dongVal) return dongVal;
   return document.getElementById('f_sigungu')?.value || null;
 }
 
@@ -1172,6 +1245,8 @@ function openAddModal() {
   initSidoDropdown();
   document.getElementById('f_sido').value = '';
   document.getElementById('f_sigungu').innerHTML = '<option value="">시/군/구 선택</option>';
+  document.getElementById('f_dong_sel').innerHTML = '<option value="">선택</option>';
+  document.getElementById('f_apt_list').innerHTML = '<option value="">동을 먼저 선택하세요</option>';
   document.getElementById('aptModal').classList.add('open');
 }
 
@@ -1209,8 +1284,11 @@ async function openEditModal(aptId) {
   }
   if (apt.dong) {
     const sel = document.getElementById('f_dong_sel');
-    for (const o of sel.options) { if (o.value === apt.dong) { sel.value = apt.dong; break; } }
+    for (const o of sel.options) {
+      if (o.dataset.dongName === apt.dong) { sel.value = o.value; break; }
+    }
   }
+  document.getElementById('f_apt_list').innerHTML = '<option value="">🔍 단지 조회 버튼을 누르세요</option>';
 
   document.getElementById('aptModal').classList.add('open');
 }
@@ -1221,9 +1299,11 @@ async function saveApt() {
   if (!name) { toast('단지명을 입력하세요', 'err'); return; }
   const supplyArea = parseFloat(document.getElementById('f_supply').value) || null;
   const privateArea = parseFloat(document.getElementById('f_private').value) || null;
+  const dongSel = document.getElementById('f_dong_sel');
+  const dongName = dongSel.selectedOptions[0]?.dataset.dongName || null;
   const data = {
     name, region: document.getElementById('f_region').value.trim(),
-    dong: document.getElementById('f_dong_sel').value.trim() || null,
+    dong: dongName,
     year: parseInt(document.getElementById('f_year').value) || null,
     units: parseInt(document.getElementById('f_units').value) || null,
     supply_area: supplyArea,
