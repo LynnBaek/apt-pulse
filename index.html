@@ -411,10 +411,6 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
         <input type="text" id="f_region" placeholder="시/군/구 선택 시 자동입력" readonly style="opacity:.6">
       </div>
       <div class="form-group">
-        <label>동/지구 (직접입력)</label>
-        <input type="text" id="f_dong" placeholder="예: 반석동">
-      </div>
-      <div class="form-group">
         <label>입주연도</label>
         <input type="number" id="f_year" placeholder="예: 2020">
       </div>
@@ -588,7 +584,6 @@ async function onSidoChange() {
   document.getElementById('f_sigungu').innerHTML = '<option value="">선택</option>';
   document.getElementById('f_dong_sel').innerHTML = '<option value="">선택</option>';
   document.getElementById('f_region').value = '';
-  document.getElementById('f_dong').value = '';
   if (!sidoCd) return;
 
   setSelectLoading('f_sigungu');
@@ -609,7 +604,6 @@ async function onSigunguChange() {
   const sigunguEl = document.getElementById('f_sigungu');
   const sigunguCd = sigunguEl.value; // 5자리
   document.getElementById('f_dong_sel').innerHTML = '<option value="">선택</option>';
-  document.getElementById('f_dong').value = '';
 
   if (!sigunguCd) return;
 
@@ -632,9 +626,7 @@ async function onSigunguChange() {
 }
 
 function onDongChange() {
-  const dongSel = document.getElementById('f_dong_sel');
-  const val = dongSel.value;
-  if (val) document.getElementById('f_dong').value = val;
+  // f_dong_sel 선택값이 dong
 }
 
 function getSigunguCode() {
@@ -1244,7 +1236,7 @@ function openAddModal() {
   if (!currentUser) { showLogin(); return; }
   editingId = null;
   document.getElementById('modalTitle').textContent = '단지 추가';
-  ['f_name','f_dong','f_year','f_units','f_supply','f_private','f_work','f_traffic','f_env','f_school','f_structure','f_link'].forEach(id => {
+  ['f_name','f_year','f_units','f_supply','f_private','f_work','f_traffic','f_env','f_school','f_structure','f_link'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -1262,7 +1254,6 @@ async function openEditModal(aptId) {
   document.getElementById('modalTitle').textContent = '단지 편집';
   document.getElementById('f_name').value = apt.name || '';
   document.getElementById('f_region').value = apt.region || '';
-  document.getElementById('f_dong').value = apt.dong || '';
   document.getElementById('f_year').value = apt.year || '';
   document.getElementById('f_units').value = apt.units || '';
   document.getElementById('f_supply').value = apt.supply_area || '';
@@ -1288,7 +1279,10 @@ async function openEditModal(aptId) {
     document.getElementById('f_sigungu').innerHTML = '<option value="">시/군/구 선택</option>';
     document.getElementById('f_dong_sel').innerHTML = '<option value="">선택</option>';
   }
-  if (apt.dong) document.getElementById('f_dong').value = apt.dong;
+  if (apt.dong) {
+    const sel = document.getElementById('f_dong_sel');
+    for (const o of sel.options) { if (o.value === apt.dong) { sel.value = apt.dong; break; } }
+  }
 
   document.getElementById('aptModal').classList.add('open');
 }
@@ -1301,7 +1295,7 @@ async function saveApt() {
   const privateArea = parseFloat(document.getElementById('f_private').value) || null;
   const data = {
     name, region: document.getElementById('f_region').value.trim(),
-    dong: document.getElementById('f_dong').value.trim(),
+    dong: document.getElementById('f_dong_sel').value.trim() || null,
     year: parseInt(document.getElementById('f_year').value) || null,
     units: parseInt(document.getElementById('f_units').value) || null,
     supply_area: supplyArea,
@@ -2138,7 +2132,7 @@ function openAddModal() {
   if (!currentUser) { showLogin(); return; }
   editingId = null;
   document.getElementById('modalTitle').textContent = '단지 추가';
-  ['f_name','f_dong','f_year','f_units','f_supply','f_private','f_work','f_traffic','f_env','f_school','f_structure','f_link'].forEach(id => {
+  ['f_name','f_year','f_units','f_supply','f_private','f_work','f_traffic','f_env','f_school','f_structure','f_link'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -2156,7 +2150,6 @@ async function openEditModal(aptId) {
   document.getElementById('modalTitle').textContent = '단지 편집';
   document.getElementById('f_name').value = apt.name || '';
   document.getElementById('f_region').value = apt.region || '';
-  document.getElementById('f_dong').value = apt.dong || '';
   document.getElementById('f_year').value = apt.year || '';
   document.getElementById('f_units').value = apt.units || '';
   document.getElementById('f_supply').value = apt.supply_area || '';
@@ -2182,7 +2175,10 @@ async function openEditModal(aptId) {
     document.getElementById('f_sigungu').innerHTML = '<option value="">시/군/구 선택</option>';
     document.getElementById('f_dong_sel').innerHTML = '<option value="">선택</option>';
   }
-  if (apt.dong) document.getElementById('f_dong').value = apt.dong;
+  if (apt.dong) {
+    const sel = document.getElementById('f_dong_sel');
+    for (const o of sel.options) { if (o.value === apt.dong) { sel.value = apt.dong; break; } }
+  }
 
   document.getElementById('aptModal').classList.add('open');
 }
@@ -2195,7 +2191,7 @@ async function saveApt() {
   const privateArea = parseFloat(document.getElementById('f_private').value) || null;
   const data = {
     name, region: document.getElementById('f_region').value.trim(),
-    dong: document.getElementById('f_dong').value.trim(),
+    dong: document.getElementById('f_dong_sel').value.trim() || null,
     year: parseInt(document.getElementById('f_year').value) || null,
     units: parseInt(document.getElementById('f_units').value) || null,
     supply_area: supplyArea,
