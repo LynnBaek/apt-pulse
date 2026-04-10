@@ -590,11 +590,18 @@ async function onSidoChange() {
   const codes = await fetchLawd({ type: 'sigungu', sidoCd });
   const sigungu = document.getElementById('f_sigungu');
   sigungu.innerHTML = '<option value="">시/군/구 선택</option>';
-  codes.filter(c => c.code.slice(2,5) !== '000').forEach(c => {
+
+  // 코드 끝 5자리가 00000인 것 = 상위 시 레벨 (예: 청주시 4311000000)
+  // 끝 5자리가 00000이 아닌 것 = 구/시/군 레벨
+  const leafCodes = codes.filter(c => c.code.slice(5) !== '00000');
+  // 구 레벨이 하나도 없으면 (군/시 단위) 상위 레벨 사용
+  const finalCodes = leafCodes.length > 0 ? leafCodes : codes;
+
+  finalCodes.forEach(c => {
     const o = document.createElement('option');
     o.value = c.code.slice(0, 5); // 앞 5자리 = lawd_cd
-    o.dataset.name = c.name;
-    o.textContent = c.name;
+    o.dataset.name = c.name.split(' ').pop();
+    o.textContent = c.name.split(' ').pop(); // "충청북도 청주시 상당구" → "상당구"
     sigungu.appendChild(o);
   });
 }
