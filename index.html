@@ -1227,19 +1227,42 @@ function openEditModal(aptId) {
 
   // 시도/시군구 드롭다운 복원
   initSidoDropdown();
+  let matched = false;
+
+  // lawd_cd로 역추적 시도
   if (apt.lawd_cd) {
-    // lawd_cd로 역추적
     for (const [sido, map] of Object.entries(LAWD_DATA)) {
       for (const [sg, code] of Object.entries(map)) {
         if (code === apt.lawd_cd) {
           document.getElementById('f_sido').value = sido;
           onSidoChange();
           document.getElementById('f_sigungu').value = sg;
+          matched = true;
           break;
         }
       }
+      if (matched) break;
     }
-  } else {
+  }
+
+  // lawd_cd 없으면 region 텍스트로 역추적
+  if (!matched && apt.region) {
+    for (const [sido, map] of Object.entries(LAWD_DATA)) {
+      for (const [sg] of Object.entries(map)) {
+        const region = apt.region;
+        if (region.includes(sg) || sg.includes(region.split(' ').pop())) {
+          document.getElementById('f_sido').value = sido;
+          onSidoChange();
+          document.getElementById('f_sigungu').value = sg;
+          matched = true;
+          break;
+        }
+      }
+      if (matched) break;
+    }
+  }
+
+  if (!matched) {
     document.getElementById('f_sido').value = '';
     document.getElementById('f_sigungu').innerHTML = '<option value="">시/군/구 선택</option>';
   }
