@@ -657,6 +657,7 @@ async function loadAptList() {
     const url = `https://xyervpopuptydcizofow.supabase.co/functions/v1/aptlist?lawdCd=${lawdCd}&apiKey=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url);
     const json = await res.json();
+    console.log('단지 조회 응답:', JSON.stringify(json).slice(0, 500));
 
     const resultCode = json?.response?.header?.resultCode;
     if (resultCode && resultCode !== '00' && resultCode !== '000') {
