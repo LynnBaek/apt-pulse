@@ -654,20 +654,18 @@ async function loadAptList() {
   sel.innerHTML = '<option value="">로딩 중...</option>';
 
   try {
-    const url = `https://xyervpopuptydcizofow.supabase.co/functions/v1/aptlist?lawdCd=${lawdCd}&apiKey=${encodeURIComponent(apiKey)}`;
+    const url = `https://xyervpopuptydcizofow.supabase.co/functions/v1/aptlist?lawdCd=${lawdCd.padEnd(10,'0')}&apiKey=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url);
     const json = await res.json();
-    console.log('단지 조회 응답:', JSON.stringify(json).slice(0, 500));
+    console.log('단지 조회 응답:', JSON.stringify(json).slice(0, 300));
 
-    const resultCode = json?.response?.header?.resultCode;
-    if (resultCode && resultCode !== '00' && resultCode !== '000') {
-      sel.innerHTML = '<option value="">조회 실패 - API 키 확인</option>';
-      toast('단지 조회 실패: ' + json?.response?.header?.resultMsg, 'err');
+    if (json.error) {
+      sel.innerHTML = '<option value="">조회 실패</option>';
+      toast('단지 조회 실패: ' + json.error, 'err');
       return;
     }
 
-    const items = json?.response?.body?.items?.item || [];
-    const arr = Array.isArray(items) ? items : (items && Object.keys(items).length ? [items] : []);
+    const arr = json.items || [];
 
     if (arr.length === 0) {
       sel.innerHTML = '<option value="">해당 동에 단지 없음</option>';
@@ -677,12 +675,11 @@ async function loadAptList() {
     sel.innerHTML = '<option value="">단지 선택</option>';
     arr.forEach(item => {
       const o = document.createElement('option');
-      o.value = JSON.stringify({
-        name: item.아파트명 || item.단지명 || '',
-        year: item.건축년도 ? parseInt(item.건축년도) : null,
-        units: item.총세대수 ? parseInt(item.총세대수) : null,
-      });
-      o.textContent = `${item.아파트명 || item.단지명} (${item.건축년도||'?'}년, ${item.총세대수||'?'}세대)`;
+      const name = item.kaptname || item.아파트명 || item.단지명 || '';
+      const year = item.kaptbuildyear || item.건축년도 || '';
+      const units = item.kaptdacnt || item.총세대수 || '';
+      o.value = JSON.stringify({ name, year: year ? parseInt(year) : null, units: units ? parseInt(units) : null });
+      o.textContent = `${name}${year ? ` (${year}년` : ''}${units ? `, ${units}세대)` : year ? ')' : ''}`;
       sel.appendChild(o);
     });
     toast(`${arr.length}개 단지 조회 완료`);
