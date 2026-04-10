@@ -407,8 +407,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
         </select>
       </div>
       <div class="form-group">
-        <label>지역명 (자동입력)</label>
-        <input type="text" id="f_region" placeholder="시/군/구 선택 시 자동입력" readonly style="opacity:.6">
+        <label>지역명 (필터용) *</label>
+        <input type="text" id="f_region" placeholder="예: 대전 유성구">
       </div>
       <div class="form-group">
         <label>입주연도</label>
@@ -583,7 +583,6 @@ async function onSidoChange() {
   const sidoCd = sido.value; // 2자리
   document.getElementById('f_sigungu').innerHTML = '<option value="">선택</option>';
   document.getElementById('f_dong_sel').innerHTML = '<option value="">선택</option>';
-  document.getElementById('f_region').value = '';
   if (!sidoCd) return;
 
   setSelectLoading('f_sigungu');
@@ -616,11 +615,6 @@ async function onSigunguChange() {
   document.getElementById('f_dong_sel').innerHTML = '<option value="">선택</option>';
 
   if (!sigunguCd) return;
-
-  // 지역명 자동입력 - "충청북도 청주시 흥덕구" 형태로
-  const sidoName = sidoEl.selectedOptions[0]?.dataset.name || '';
-  const sgDisplayName = sigunguEl.selectedOptions[0]?.dataset.name || '';
-  document.getElementById('f_region').value = `${sidoName} ${sgDisplayName}`.trim();
 
   setSelectLoading('f_dong_sel');
   const codes = await fetchLawd({ type: 'dong', sigunguCd });
