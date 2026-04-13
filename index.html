@@ -1593,6 +1593,8 @@ document.getElementById('sheetDateFilter').addEventListener('change', renderShee
 document.getElementById('aptModal').addEventListener('click', e => {
   if (e.target === document.getElementById('aptModal')) closeModal('aptModal');
 });
+
+function openSettingsModal() {
   document.getElementById('settings_api_key').value = localStorage.getItem('rtms_key') || '';
   document.getElementById('settingsModal').classList.add('open');
 }
