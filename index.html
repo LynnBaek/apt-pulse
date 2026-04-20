@@ -758,14 +758,22 @@ async function loadAptList() {
     }
 
     const arr = json.items || [];
+    const dongCode = document.getElementById('f_dong_sel')?.value; // 5자리 법정동코드
 
-    if (arr.length === 0) {
-      sel.innerHTML = '<option value="">해당 동에 단지 없음</option>';
+    // 동이 선택됐으면 해당 동 단지만 필터 (bjdCode 앞 5자리가 동 코드와 일치)
+    const filtered = dongCode
+      ? arr.filter(item => item.bjdCode && item.bjdCode.startsWith(dongCode))
+      : arr;
+
+    if (filtered.length === 0) {
+      sel.innerHTML = arr.length > 0
+        ? '<option value="">선택한 동에 단지 없음 (동 선택 해제 후 재조회하면 전체 표시)</option>'
+        : '<option value="">해당 지역에 단지 없음</option>';
       return;
     }
 
     sel.innerHTML = '<option value="">단지 선택</option>';
-    arr.forEach(item => {
+    filtered.forEach(item => {
       const o = document.createElement('option');
       const name = item.kaptName || item.kaptname || item.아파트명 || item.단지명 || '';
       const year = item.kaptBuildYear || item.kaptbuildyear || item.건축년도 || '';
@@ -775,7 +783,7 @@ async function loadAptList() {
       o.textContent = `${name}${year ? ` (${year}년` : ''}${units ? `, ${units}세대)` : year ? ')' : ''}`;
       sel.appendChild(o);
     });
-    toast(`${arr.length}개 단지 조회 완료`);
+    toast(`${filtered.length}개 단지 조회 완료${dongCode ? ` (${arr.length}개 중 필터)` : ''}`);
   } catch(e) {
     sel.innerHTML = '<option value="">오류 발생</option>';
     toast('단지 조회 오류: ' + e.message, 'err');
