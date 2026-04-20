@@ -722,7 +722,7 @@ async function onSigunguChange() {
   dongSel.innerHTML = '<option value="">읍/면/동 선택</option>';
   codes.filter(c => !c.name.endsWith('시') && !c.name.endsWith('군') && !c.name.endsWith('구')).forEach(c => {
     const o = document.createElement('option');
-    o.value = c.code.slice(0, 5); // 앞 5자리 법정동 코드
+    o.value = c.code.slice(0, 8); // 앞 8자리 = 동 단위 식별 코드
     o.dataset.dongName = c.name.split(' ').pop();
     o.textContent = c.name.split(' ').pop();
     dongSel.appendChild(o);
@@ -758,9 +758,9 @@ async function loadAptList() {
     }
 
     const arr = json.items || [];
-    const dongCode = document.getElementById('f_dong_sel')?.value; // 5자리 법정동코드
+    const dongCode = document.getElementById('f_dong_sel')?.value; // 8자리 동 코드
 
-    // 동이 선택됐으면 해당 동 단지만 필터 (bjdCode 앞 5자리가 동 코드와 일치)
+    // 동이 선택됐으면 해당 동 단지만 필터 (bjdCode 앞 8자리가 동 코드와 일치)
     const filtered = dongCode
       ? arr.filter(item => item.bjdCode && item.bjdCode.startsWith(dongCode))
       : arr;
