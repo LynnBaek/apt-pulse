@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>정찰병 시세 트래커</title>
+<title>부동산 꿈틀</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -89,8 +89,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 
 /* ── 탭바 ─────────────────────────── */
 .tabbar{display:flex;align-items:center;background:var(--surf1);border-bottom:1px solid var(--border);padding:0 16px;height:48px;gap:4px;flex-shrink:0}
-.logo{font-size:15px;font-weight:700;color:var(--blue);margin-right:16px;letter-spacing:-0.5px;white-space:nowrap}
-.logo span{color:var(--text3);font-weight:400}
+.logo{font-size:20px;font-weight:800;color:var(--blue);margin-right:16px;letter-spacing:-0.5px;white-space:nowrap}
+.logo span{color:#f472b6;font-weight:800}
 .tab{padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;color:var(--text3);border:none;background:none;font-family:'Noto Sans KR',sans-serif;transition:all .15s;white-space:nowrap}
 .tab:hover{color:var(--text2);background:var(--surf2)}
 .tab.active{color:var(--text);background:var(--surf3);font-weight:500}
@@ -302,20 +302,48 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 .user-badge{font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px}
 .user-badge span{color:var(--text2)}
 
-/* 색상 변화 뱃지 */
+
+
+  25%{d:path("M6 26 Q10 24 15 18 Q20 13 24 10 Q26 8 29 6")}
+  50%{d:path("M6 24 Q10 18 15 14 Q20 10 24 8 Q26 6 29 5")}
+  75%{d:path("M6 26 Q10 20 15 16 Q20 12 24 10 Q26 8 29 6")}
+}
+
+  25%{cx:29;cy:6}
+  50%{cx:29;cy:5}
+  75%{cx:29;cy:6}
+}
+
+  95%{ry:0.3}
+}
+
+  25%{transform:rotate(6deg) translateY(-2px)}
+  50%{transform:rotate(-4deg) translateY(1px)}
+  75%{transform:rotate(7deg) translateY(-1px)}
+}
+
+  25%{transform:rotate(-7deg) translateY(-1px)}
+  50%{transform:rotate(5deg) translateY(2px)}
+  75%{transform:rotate(-6deg) translateY(0px)}
+}
+
+
+
 .trend{display:inline-flex;align-items:center;gap:2px;font-size:10px;padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace}
 .trend.up{background:rgba(239,68,68,.15);color:#ef4444}
 .trend.dn{background:rgba(16,185,129,.15);color:#10b981}
 .trend.flat{background:rgba(100,116,139,.15);color:#64748b}
 </style>
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=72a2be5c7e565f1db3befdc3dde46f45&libraries=services"></script>
 </head>
 <body>
 
 <!-- 탭바 -->
 <div class="tabbar">
-  <div class="logo">🔭 정찰병<span> 시세 트래커</span></div>
+  <div class="logo">🏢 부동산<span> 꿈틀</span></div>
   <button class="tab active" onclick="switchTab('mgr')">단지 관리</button>
   <button class="tab" onclick="switchTab('sheet')">시트 뷰</button>
+  <button class="tab" onclick="switchTab('map')">지도 뷰</button>
   <div class="tabbar-right">
     <div class="theme-toggle" onclick="toggleTheme()" title="라이트/다크 전환">
       <div class="toggle-track"><div class="toggle-thumb"></div></div>
@@ -374,6 +402,36 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
       <button class="btn btn-primary" style="font-size:11px" onclick="addNewDateRow()">+ 날짜 추가</button>
     </div>
     <div class="sheet-wrap" id="sheetWrap"></div>
+  </div>
+</div>
+
+<!-- ════ 페이지 3: 지도 뷰 ════ -->
+<div class="page" id="page-map" style="position:relative">
+  <!-- 지도 -->
+  <div id="kakaoMap" style="width:100%;height:100%"></div>
+
+  <!-- 좌측 패널 -->
+  <div id="mapPanel" style="position:absolute;top:12px;left:12px;z-index:10;width:280px;display:flex;flex-direction:column;gap:8px">
+    <!-- 검색 -->
+    <div style="background:var(--surf1);border:1px solid var(--border);border-radius:10px;padding:10px">
+      <input type="text" id="mapSearch" placeholder="단지명 / 지역 검색..." class="search-box" style="width:100%">
+      <select id="mapRegionFilter" class="sel" style="width:100%;margin-top:6px"><option value="">전체 지역</option></select>
+    </div>
+    <!-- 단지 목록 -->
+    <div id="mapAptList" style="background:var(--surf1);border:1px solid var(--border);border-radius:10px;overflow-y:auto;max-height:calc(100vh - 180px)"></div>
+  </div>
+
+  <!-- 단지 정보 팝업 -->
+  <div id="mapInfoBox" style="display:none;position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:10;background:var(--surf1);border:1px solid var(--border);border-radius:12px;padding:16px 20px;min-width:320px;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,.3)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+      <div>
+        <div id="mapInfoName" style="font-size:16px;font-weight:700;margin-bottom:2px"></div>
+        <div id="mapInfoSub" style="font-size:11px;color:var(--text3)"></div>
+      </div>
+      <button onclick="document.getElementById('mapInfoBox').style.display='none'" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">×</button>
+    </div>
+    <div id="mapInfoStats" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px"></div>
+    <div id="mapInfoLinks" style="display:flex;gap:6px;flex-wrap:wrap"></div>
   </div>
 </div>
 
@@ -497,8 +555,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 <!-- 로그인 오버레이 -->
 <div class="login-overlay" id="loginOverlay" style="display:none">
   <div class="login-box">
-    <div class="login-logo">🔭 정찰병</div>
-    <div class="login-sub">시세 트래커 — 관리자 로그인</div>
+    <div class="login-logo">🏠 부동산 꿈틀</div>
+    <div class="login-sub">관리자 로그인</div>
     <div class="form-group">
       <label>이메일</label>
       <input type="email" id="loginEmail" placeholder="이메일 입력" onkeydown="if(event.key==='Enter')doLogin()">
@@ -811,8 +869,147 @@ function toggleTheme() {
   }
 }
 
+// ══════════════════════════════════════════
+//  지도 뷰
+// ══════════════════════════════════════════
+let kakaoMap = null;
+let mapOverlays = [];
+let geocoder = null;
+let mapInitialized = false;
+
+function initMap() {
+  if (mapInitialized) { renderMapList(); return; }
+  mapInitialized = true;
+
+  const container = document.getElementById('kakaoMap');
+  const options = { center: new kakao.maps.LatLng(36.35, 127.38), level: 7 };
+  kakaoMap = new kakao.maps.Map(container, options);
+  geocoder = new kakao.maps.services.Geocoder();
+
+  kakaoMap.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+  kakaoMap.addControl(new kakao.maps.MapTypeControl(), kakao.maps.ControlPosition.TOPRIGHT);
+
+  // 필터 초기화
+  const regions = [...new Set(apts.map(a => a.region))].sort();
+  const sel = document.getElementById('mapRegionFilter');
+  regions.forEach(r => { const o = document.createElement('option'); o.value = r; o.textContent = r; sel.appendChild(o); });
+
+  document.getElementById('mapSearch').addEventListener('input', renderMapList);
+  document.getElementById('mapRegionFilter').addEventListener('change', renderMapList);
+
+  renderMapList();
+  placeAllMarkersAsync();
+}
+
+async function placeAllMarkersAsync() {
+  for (const apt of apts) {
+    await placeMarker(apt);
+    await new Promise(r => setTimeout(r, 40));
+  }
+}
+
+function placeMarker(apt) {
+  return new Promise(resolve => {
+    const addr = (apt.region || '') + ' ' + (apt.dong || '');
+    geocoder.addressSearch(addr, (result, status) => {
+      if (status !== kakao.maps.services.Status.OK) { resolve(); return; }
+      const coords = new kakao.maps.LatLng(result[0].y, result[0].x);
+      const records = sise[apt.id] || [];
+      const latest = records[records.length - 1];
+      const color = latest?.buy
+        ? (latest.buy >= 100000 ? '#ef4444' : latest.buy >= 50000 ? '#f59e0b' : '#10b981')
+        : '#94a3b8';
+
+      const content = `<div data-apt-id="${apt.id}" onclick="focusAptById('${apt.id}')" style="background:${color};color:#fff;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.4);font-family:'Noto Sans KR',sans-serif;text-align:center;line-height:1.4">${apt.name}${latest?.buy ? `<br><span style="font-size:10px;opacity:.9">${fmt억(latest.buy)}</span>` : ''}</div>`;
+
+      const overlay = new kakao.maps.CustomOverlay({ content, position: coords, yAnchor: 1.2 });
+      overlay.setMap(kakaoMap);
+      overlay._aptId = apt.id;
+      overlay._coords = coords;
+      mapOverlays.push(overlay);
+      resolve();
+    });
+  });
+}
+
+function renderMapList() {
+  const q = document.getElementById('mapSearch')?.value?.trim().toLowerCase() || '';
+  const region = document.getElementById('mapRegionFilter')?.value || '';
+  const filtered = apts.filter(a =>
+    (!q || a.name.toLowerCase().includes(q) || (a.region||'').toLowerCase().includes(q)) &&
+    (!region || a.region === region)
+  );
+
+  const el = document.getElementById('mapAptList');
+  el.innerHTML = '';
+  filtered.forEach(a => {
+    const records = sise[a.id] || [];
+    const latest = records[records.length - 1];
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border2);transition:background .1s';
+    div.innerHTML = `
+      <div style="font-size:13px;font-weight:500;margin-bottom:2px">${a.name}</div>
+      <div style="font-size:11px;color:var(--text3);display:flex;gap:6px">
+        <span>${a.region}</span>
+        ${latest?.buy ? `<span style="color:var(--blue);font-family:'JetBrains Mono',monospace">${fmt억(latest.buy)}</span>` : ''}
+      </div>`;
+    div.onmouseenter = () => div.style.background = 'var(--surf2)';
+    div.onmouseleave = () => div.style.background = '';
+    div.onclick = () => focusApt(a);
+    el.appendChild(div);
+  });
+
+  // 마커 필터
+  const idSet = new Set(filtered.map(a => a.id));
+  mapOverlays.forEach(o => o.setMap(idSet.has(o._aptId) ? kakaoMap : null));
+}
+
+function focusAptById(aptId) {
+  const apt = apts.find(a => a.id === aptId);
+  if (apt) focusApt(apt);
+}
+
+function focusApt(apt) {
+  const overlay = mapOverlays.find(o => o._aptId === apt.id);
+  if (overlay?._coords) {
+    kakaoMap.setCenter(overlay._coords);
+    kakaoMap.setLevel(4);
+  }
+  showMapInfo(apt);
+}
+
+function showMapInfo(apt) {
+  const records = (sise[apt.id] || []).sort((a,b) => a.date.localeCompare(b.date));
+  const latest = records[records.length - 1];
+  const encName = encodeURIComponent(apt.name);
+  const ratio = latest?.buy && latest?.rent ? Math.round(latest.rent/latest.buy*100) : null;
+  const gap = latest?.buy && latest?.rent ? ((latest.buy-latest.rent)/10000).toFixed(1) : null;
+
+  document.getElementById('mapInfoName').textContent = apt.name;
+  document.getElementById('mapInfoSub').textContent = `${apt.region} ${apt.dong||''} · ${apt.year||'?'}년 · ${apt.units?.toLocaleString()||'?'}세대`;
+  document.getElementById('mapInfoStats').innerHTML = `
+    <div style="background:var(--surf2);border-radius:8px;padding:10px;text-align:center">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px">매매가</div>
+      <div style="font-size:15px;font-weight:700;color:var(--blue)">${fmt억(latest?.buy)}</div>
+    </div>
+    <div style="background:var(--surf2);border-radius:8px;padding:10px;text-align:center">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px">전세가율</div>
+      <div style="font-size:15px;font-weight:700;color:var(--green)">${ratio !== null ? ratio+'%' : '-'}</div>
+    </div>
+    <div style="background:var(--surf2);border-radius:8px;padding:10px;text-align:center">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px">갭(억)</div>
+      <div style="font-size:15px;font-weight:700;color:var(--amber)">${gap !== null ? gap+'억' : '-'}</div>
+    </div>`;
+  document.getElementById('mapInfoLinks').innerHTML = `
+    <a href="https://asil.kr/asil/result.jsp?keyword=${encName}" target="_blank" class="btn btn-outline" style="font-size:11px;text-decoration:none;color:var(--green)">📊 아실</a>
+    <a href="https://hogangnono.com/apt/search?query=${encName}" target="_blank" class="btn btn-outline" style="font-size:11px;text-decoration:none;color:var(--amber)">🏘 호갱노노</a>
+    ${apt.link ? `<a href="${apt.link}" target="_blank" class="btn btn-outline" style="font-size:11px;text-decoration:none;color:var(--blue)">🔗 네이버</a>` : ''}
+    <button class="btn btn-outline" style="font-size:11px" onclick="selectApt('${apt.id}');switchTab('mgr')">상세 보기 →</button>`;
+  document.getElementById('mapInfoBox').style.display = 'block';
+}
+
 function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['mgr','sheet'][i] === tab));
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['mgr','sheet','map'][i] === tab));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + tab).classList.add('active');
   if (tab === 'sheet') {
@@ -820,6 +1017,7 @@ function switchTab(tab) {
     if (el && !el.value) el.value = new Date().toISOString().slice(0,10);
     renderSheet();
   }
+  if (tab === 'map') initMap();
 }
 
 // ══════════════════════════════════════════
@@ -960,25 +1158,28 @@ function renderDetail(apt) {
     ${apt.school ? `<span class="badge ${gradeClass(apt.school)}">학군 ${apt.school}</span>` : ''}
   </div>` : ''}
 
-  <!-- 실거래가 API -->
+  <!-- 실거래가 조회 -->
   <div class="sec">
     <div class="sec-title">
-      <div class="sec-title-l">실거래가 조회 <span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:6px">공공데이터 API</span></div>
-      <button class="btn btn-amber" style="font-size:11px" onclick="fetchRealTrade('${apt.id}')">조회</button>
+      <div class="sec-title-l">실거래가 조회</div>
     </div>
-    <div class="api-wrap">
-      <div class="api-row">
-        <span class="api-label">법정동코드</span>
-        <input class="api-input" id="api_bcode_${apt.id}" placeholder="예: 30200 (대전 서구)" value="${apt.lawd_cd || getLaundCode(apt.region)}">
-        <span style="font-size:10px;color:var(--text3);margin-left:6px">· 단지명</span>
-        <input class="api-input" id="api_name_${apt.id}" placeholder="검색 단지명" value="${apt.name.slice(0,6)}" style="max-width:120px">
-      </div>
-      <div class="api-row">
-        <span class="api-label">API키</span>
-        <input class="api-input" id="api_key" placeholder="공공데이터포털 인증키 (선택)" type="password" value="${localStorage.getItem('rtms_key')||''}">
-        <span style="font-size:10px;color:var(--text3);margin-left:8px">없으면 네이버 실거래가 링크로 대체</span>
-      </div>
-      <div id="api_result_${apt.id}"><div class="no-data" style="font-size:11px">조회 버튼을 누르면 최근 6개월 실거래 내역을 표시합니다</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <a href="https://asil.kr/asil/result.jsp?keyword=${encName}" target="_blank"
+        class="btn btn-outline" style="text-decoration:none;color:var(--green);font-size:12px">
+        📊 아실 실거래가
+      </a>
+      <a href="https://hogangnono.com/apt/search?query=${encName}" target="_blank"
+        class="btn btn-outline" style="text-decoration:none;color:var(--amber);font-size:12px">
+        🏘 호갱노노 실거래가
+      </a>
+      <a href="https://richgo.ai/search?keyword=${encName}" target="_blank"
+        class="btn btn-outline" style="text-decoration:none;color:var(--purple);font-size:12px">
+        💎 리치고 실거래가
+      </a>
+      ${apt.link ? `<a href="${apt.link}?tab=trade" target="_blank"
+        class="btn btn-outline" style="text-decoration:none;color:var(--blue);font-size:12px">
+        🔗 네이버 실거래가
+      </a>` : ''}
     </div>
   </div>
 
@@ -1040,140 +1241,11 @@ function renderDetail(apt) {
 }
 
 // ── 법정동 코드 매핑 (간략) ─────────────────
-function getLaundCode(region) {
-  const map = {
-    '대전 유성구': '30200', '대전 서구': '30170', '대전 동구': '30110',
-    '서울 마포구': '11440', '서울 강남구': '11680', '서울 송파구': '11710',
-    '인천 남동구': '28200', '대구 수성구': '27290',
-    '울산 남구': '31140', '울산 북구': '31170',
-    '전주시': '45111', '관악구': '11620', '수지구': '41465',
-    '흥덕구': '43113', '상당구': '43111', '서원구': '43112',
-  };
-  for (const [k, v] of Object.entries(map)) if (region?.includes(k.split(' ').pop()) || region?.includes(k)) return v;
-  return '';
-}
 
 // ══════════════════════════════════════════
 //  실거래가 API 조회
 // ══════════════════════════════════════════
-async function fetchRealTrade(aptId) {
-  const apt = apts.find(a => a.id === aptId);
-  const bcode = document.getElementById(`api_bcode_${aptId}`)?.value?.trim();
-  const nameQ = document.getElementById(`api_name_${aptId}`)?.value?.trim();
-  const apiKey = document.getElementById('api_key')?.value?.trim();
-  const resultEl = document.getElementById(`api_result_${aptId}`);
 
-  if (apiKey) localStorage.setItem('rtms_key', apiKey);
-
-  resultEl.innerHTML = '<div class="loading">조회 중...</div>';
-
-  if (!apiKey) {
-    const complexId = apt?.link ? (apt.link.match(/complexes\/(\d+)/) || [])[1] : null;
-    const naverUrl = complexId
-      ? `https://new.land.naver.com/complexes/${complexId}?tab=trade`
-      : `https://new.land.naver.com/complexes?a=APT&e=RETAIL`;
-    resultEl.innerHTML = `
-      <div style="padding:12px;font-size:11px;color:var(--text3);line-height:1.8">
-        <p style="margin-bottom:8px">📌 API 키 없이 조회하려면 네이버 부동산 실거래가를 확인하세요:</p>
-        <a href="${naverUrl}" target="_blank" style="color:var(--blue);text-decoration:none;font-size:12px">🔗 네이버 부동산 실거래가 바로가기 →</a>
-        <br><br>
-        <p>📌 공공데이터 API 등록 방법:</p>
-        <p>1. <a href="https://www.data.go.kr/data/15058017/openapi.do" target="_blank" style="color:var(--blue)">data.go.kr</a> 에서 "아파트 매매 실거래가" 신청</p>
-        <p>2. 인증키를 위 API키 입력란에 붙여넣기 후 재조회</p>
-      </div>`;
-    return;
-  }
-
-  if (!bcode) {
-    resultEl.innerHTML = '<div class="no-data" style="color:var(--red)">법정동 코드를 입력하세요</div>';
-    return;
-  }
-
-  try {
-    // 최근 3개월
-    const months = [];
-    const now = new Date();
-    for (let i = 2; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push(`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}`);
-    }
-
-    const REALTRADE_FN = 'https://xyervpopuptydcizofow.supabase.co/functions/v1/realtrade';
-    const results = [];
-
-    for (const ym of months) {
-      const url = `${REALTRADE_FN}?lawdCd=${bcode}&dealYmd=${ym}&apiKey=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(url);
-      const json = await res.json();
-
-      // 오류 응답 체크
-      if (json.error) {
-        resultEl.innerHTML = `<div class="no-data" style="color:var(--red)">API 오류 (${ym}): ${json.error}</div>`;
-        return;
-      }
-      // 공공API 오류 코드 체크
-      const resultCode = json?.response?.header?.resultCode;
-      const resultMsg = json?.response?.header?.resultMsg;
-      if (resultCode && resultCode !== '00' && resultCode !== '000') {
-        resultEl.innerHTML = `<div class="no-data" style="color:var(--red)">
-          공공API 오류: ${resultMsg} (코드: ${resultCode})<br>
-          <small style="color:var(--text3)">API 키를 확인하거나 법정동 코드(${bcode})가 올바른지 확인하세요</small>
-        </div>`;
-        return;
-      }
-
-      const items = json?.response?.body?.items?.item || [];
-      const arr = Array.isArray(items) ? items : (items && Object.keys(items).length ? [items] : []);
-      arr.forEach(item => {
-        if (!item.년) return;
-        if (nameQ && !item.아파트?.includes(nameQ.slice(0,4))) return;
-        results.push({
-          date: `${item.년}-${String(item.월).padStart(2,'0')}-${String(item.일).padStart(2,'0')}`,
-          name: item.아파트,
-          area: parseFloat(item.전용면적),
-          price: parseInt((item.거래금액||'').replace(/,/g,'')),
-          floor: item.층,
-        });
-      });
-    }
-
-    results.sort((a,b) => b.date.localeCompare(a.date));
-
-    if (results.length === 0) {
-      resultEl.innerHTML = `<div class="no-data">
-        조회된 실거래 데이터가 없습니다.<br>
-        <small style="color:var(--text3);line-height:2">
-        • 법정동 코드(${bcode})가 맞는지 확인 → <a href="https://www.code.go.kr" target="_blank" style="color:var(--blue)">code.go.kr</a><br>
-        • 단지명 검색어(${nameQ||'없음'})를 지우고 재조회하면 해당 지역 전체 거래가 나옵니다<br>
-        • 최근 3개월 거래가 없는 단지일 수 있습니다
-        </small>
-      </div>`;
-      return;
-    }
-
-    resultEl.innerHTML = `
-      <div class="api-result">
-        <div class="api-tr hdr"><span>날짜</span><span>단지명</span><span>가격</span><span>면적(㎡)</span><span>층</span></div>
-        ${results.slice(0,30).map(r => `
-        <div class="api-tr" onclick="applyRealTrade(${r.price}, '${r.date}', '${aptId}')">
-          <span>${r.date}</span>
-          <span style="color:var(--text2)">${r.name||'-'}</span>
-          <span class="api-price">${(r.price/10000).toFixed(2)}억</span>
-          <span class="api-info">${r.area}㎡</span>
-          <span class="api-info">${r.floor}층</span>
-        </div>`).join('')}
-      </div>
-      <div style="font-size:10px;color:var(--text3);padding:6px 8px">클릭하면 매매가로 자동 입력됩니다 (최근 3개월 ${results.length}건)</div>`;
-  } catch (err) {
-    resultEl.innerHTML = `<div class="no-data" style="color:var(--red)">오류: ${err.message}</div>`;
-  }
-}
-
-function applyRealTrade(price, date, aptId) {
-  document.getElementById('inp_date').value = date;
-  document.getElementById('inp_buy').value = price;
-  toast(`${date} 실거래가 ${(price/10000).toFixed(2)}억 입력`);
-}
 
 // ══════════════════════════════════════════
 //  시세 저장/삭제
