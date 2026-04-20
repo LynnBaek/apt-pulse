@@ -515,9 +515,17 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
         <input type="text" id="f_structure" placeholder="예: 계단식 방3화2">
       </div>
       <div class="form-group full">
+        <label>도로명주소 (지도 위치용)</label>
+        <input type="text" id="f_address" placeholder="단지 선택 시 자동입력">
+      </div>
+      <div class="form-group full">
         <label>네이버 부동산 링크</label>
         <input type="text" id="f_link" placeholder="https://new.land.naver.com/complexes/...">
       </div>
+      <!-- 숨김 필드 -->
+      <input type="hidden" id="f_kapt_code">
+      <input type="hidden" id="f_lat">
+      <input type="hidden" id="f_lng">
     </div>
     <div class="form-footer">
       <button class="btn btn-outline" onclick="closeModal('aptModal')">취소</button>
@@ -759,10 +767,11 @@ async function loadAptList() {
     sel.innerHTML = '<option value="">단지 선택</option>';
     arr.forEach(item => {
       const o = document.createElement('option');
-      const name = item.kaptname || item.아파트명 || item.단지명 || '';
-      const year = item.kaptbuildyear || item.건축년도 || '';
-      const units = item.kaptdacnt || item.총세대수 || '';
-      o.value = JSON.stringify({ name, year: year ? parseInt(year) : null, units: units ? parseInt(units) : null });
+      const name = item.kaptName || item.kaptname || item.아파트명 || item.단지명 || '';
+      const year = item.kaptBuildYear || item.kaptbuildyear || item.건축년도 || '';
+      const units = item.kaptdaCnt || item.kaptdacnt || item.총세대수 || '';
+      const kaptCode = item.kaptCode || item.kaptcode || '';
+      o.value = JSON.stringify({ name, year: year ? parseInt(year) : null, units: units ? parseInt(units) : null, kaptCode });
       o.textContent = `${name}${year ? ` (${year}년` : ''}${units ? `, ${units}세대)` : year ? ')' : ''}`;
       sel.appendChild(o);
     });
@@ -773,7 +782,7 @@ async function loadAptList() {
   }
 }
 
-function onAptListChange() {
+async function onAptListChange() {
   const sel = document.getElementById('f_apt_list');
   if (!sel.value) return;
   try {
@@ -781,7 +790,42 @@ function onAptListChange() {
     if (data.name) document.getElementById('f_name').value = data.name;
     if (data.year) document.getElementById('f_year').value = data.year;
     if (data.units) document.getElementById('f_units').value = data.units;
-  } catch(e) {}
+
+    // kaptCode 있으면 기본정보 자동 조회
+    if (data.kaptCode) {
+      const apiKey = localStorage.getItem('rtms_key') || '';
+      if (!apiKey) return;
+
+      toast('단지 상세정보 조회 중...');
+      const res = await fetch(`https://xyervpopuptydcizofow.supabase.co/functions/v1/kaptinfo?kaptCode=${data.kaptCode}&apiKey=${encodeURIComponent(apiKey)}`);
+      const json = await res.json();
+      const bass = json.bassItem;
+      if (!bass) return;
+
+      // 자동입력
+      if (bass.doroJuso) document.getElementById('f_address').value = bass.doroJuso;
+      if (bass.kaptdaCnt) document.getElementById('f_units').value = bass.kaptdaCnt;
+      if (bass.kaptUsedate) document.getElementById('f_year').value = bass.kaptUsedate.slice(0,4);
+      document.getElementById('f_kapt_code').value = data.kaptCode;
+
+      // 카카오 지오코딩으로 위경도 획득
+      if (bass.doroJuso) {
+        geocodeAddress(bass.doroJuso);
+      }
+      toast('단지 정보 자동입력 완료 ✓');
+    }
+  } catch(e) { console.error(e); }
+}
+
+function geocodeAddress(address) {
+  if (!window.kakao?.maps?.services) return;
+  const geocoder = new kakao.maps.services.Geocoder();
+  geocoder.addressSearch(address, (result, status) => {
+    if (status === kakao.maps.services.Status.OK) {
+      document.getElementById('f_lat').value = result[0].y;
+      document.getElementById('f_lng').value = result[0].x;
+    }
+  });
 }
 
 function getSigunguCode() {
@@ -910,24 +954,36 @@ async function placeAllMarkersAsync() {
 
 function placeMarker(apt) {
   return new Promise(resolve => {
-    const addr = (apt.region || '') + ' ' + (apt.dong || '');
-    geocoder.addressSearch(addr, (result, status) => {
-      if (status !== kakao.maps.services.Status.OK) { resolve(); return; }
-      const coords = new kakao.maps.LatLng(result[0].y, result[0].x);
-      const records = sise[apt.id] || [];
-      const latest = records[records.length - 1];
-      const color = latest?.buy
-        ? (latest.buy >= 100000 ? '#ef4444' : latest.buy >= 50000 ? '#f59e0b' : '#10b981')
-        : '#94a3b8';
+    const records = sise[apt.id] || [];
+    const latest = records[records.length - 1];
+    const color = latest?.buy
+      ? (latest.buy >= 100000 ? '#ef4444' : latest.buy >= 50000 ? '#f59e0b' : '#10b981')
+      : '#94a3b8';
+    const content = `<div data-apt-id="${apt.id}" onclick="focusAptById('${apt.id}')" style="background:${color};color:#fff;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.4);font-family:'Noto Sans KR',sans-serif;text-align:center;line-height:1.4">${apt.name}${latest?.buy ? `<br><span style="font-size:10px;opacity:.9">${fmt억(latest.buy)}</span>` : ''}</div>`;
 
-      const content = `<div data-apt-id="${apt.id}" onclick="focusAptById('${apt.id}')" style="background:${color};color:#fff;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.4);font-family:'Noto Sans KR',sans-serif;text-align:center;line-height:1.4">${apt.name}${latest?.buy ? `<br><span style="font-size:10px;opacity:.9">${fmt억(latest.buy)}</span>` : ''}</div>`;
-
+    const addOverlay = (lat, lng) => {
+      const coords = new kakao.maps.LatLng(lat, lng);
       const overlay = new kakao.maps.CustomOverlay({ content, position: coords, yAnchor: 1.2 });
       overlay.setMap(kakaoMap);
       overlay._aptId = apt.id;
       overlay._coords = coords;
       mapOverlays.push(overlay);
       resolve();
+    };
+
+    // lat/lng 저장돼 있으면 바로 사용
+    if (apt.lat && apt.lng) {
+      addOverlay(apt.lat, apt.lng);
+      return;
+    }
+
+    // 없으면 주소로 지오코딩
+    const addr = (apt.address || '') || ((apt.region || '') + ' ' + (apt.dong || ''));
+    if (!addr.trim()) { resolve(); return; }
+
+    geocoder.addressSearch(addr, (result, status) => {
+      if (status !== kakao.maps.services.Status.OK) { resolve(); return; }
+      addOverlay(result[0].y, result[0].x);
     });
   });
 }
@@ -1333,7 +1389,7 @@ function openAddModal() {
   if (!currentUser) { showLogin(); return; }
   editingId = null;
   document.getElementById('modalTitle').textContent = '단지 추가';
-  ['f_name','f_year','f_units','f_supply','f_private','f_work','f_traffic','f_env','f_school','f_structure','f_link'].forEach(id => {
+  ['f_name','f_year','f_units','f_supply','f_private','f_work','f_traffic','f_env','f_school','f_structure','f_link','f_address','f_kapt_code','f_lat','f_lng'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -1363,6 +1419,10 @@ async function openEditModal(aptId) {
   document.getElementById('f_school').value = apt.school || '';
   document.getElementById('f_structure').value = apt.structure || '';
   document.getElementById('f_link').value = apt.link || '';
+  document.getElementById('f_address').value = apt.address || '';
+  document.getElementById('f_kapt_code').value = apt.kapt_code || '';
+  document.getElementById('f_lat').value = apt.lat || '';
+  document.getElementById('f_lng').value = apt.lng || '';
 
   // 시도/시군구/동 드롭다운 복원 (API 기반)
   await initSidoDropdown();
@@ -1413,6 +1473,10 @@ async function saveApt() {
     structure: document.getElementById('f_structure').value.trim() || null,
     link: document.getElementById('f_link').value.trim() || null,
     lawd_cd: getSigunguCode(),
+    kapt_code: document.getElementById('f_kapt_code').value || null,
+    address: document.getElementById('f_address').value.trim() || null,
+    lat: parseFloat(document.getElementById('f_lat').value) || null,
+    lng: parseFloat(document.getElementById('f_lng').value) || null,
   };
   try {
     if (editingId) {
