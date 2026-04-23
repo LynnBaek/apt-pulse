@@ -758,7 +758,7 @@ async function loadAptList() {
     }
 
     const arr = json.items || [];
-    const dongCode = document.getElementById('f_dong_sel')?.value; // 8자리 동 코드
+    const dongCode = getDongCode(); // 8자리 동 코드
 
     // 동이 선택됐으면 해당 동 단지만 필터 (bjdCode 앞 8자리가 동 코드와 일치)
     const filtered = dongCode
@@ -837,10 +837,15 @@ function geocodeAddress(address) {
 }
 
 function getSigunguCode() {
-  // 동이 선택됐으면 동 코드, 아니면 시군구 코드
+  // lawd_cd는 항상 5자리 (시군구 코드)
   const dongVal = document.getElementById('f_dong_sel')?.value;
-  if (dongVal) return dongVal;
-  return document.getElementById('f_sigungu')?.value || null;
+  if (dongVal) return dongVal.slice(0, 5);
+  return document.getElementById('f_sigungu')?.value?.slice(0, 5) || null;
+}
+
+function getDongCode() {
+  // 단지 목록 필터링용 8자리 동 코드
+  return document.getElementById('f_dong_sel')?.value || null;
 }
 
 // ══════════════════════════════════════════
