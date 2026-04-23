@@ -1226,7 +1226,7 @@ function renderDetail(apt) {
   <div class="sec">
     <div class="sec-title">
       <div class="sec-title-l">실거래가 조회</div>
-      <button class="btn btn-amber" style="font-size:11px" onclick="fetchRealTrade('${apt.id}', '${apt.lawd_cd||''}', '${apt.name}')">🔍 공공API 조회</button>
+      <button class="btn btn-amber" style="font-size:11px" onclick="fetchRealTrade('${apt.id}', '${apt.lawd_cd ? apt.lawd_cd.slice(0,5) : ''}', '${apt.name}')">🔍 공공API 조회</button>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <a href="https://search.naver.com/search.naver?query=아실+${encName}" target="_blank"
@@ -1341,8 +1341,12 @@ async function fetchRealTrade(aptId, lawdCd, aptName) {
 
       const items = json?.response?.body?.items?.item || [];
       const arr = Array.isArray(items) ? items : (items && Object.keys(items).length ? [items] : []);
+      const nameNorm = aptName.replace(/\s/g,'');
       arr.forEach(item => {
         if (!item.년) return;
+        const itemNorm = (item.아파트||'').replace(/\s/g,'');
+        // 양방향 포함 여부 체크 (공백 제거 후)
+        if (nameNorm && !itemNorm.includes(nameNorm) && !nameNorm.includes(itemNorm)) return;
         results.push({
           date: `${item.년}-${String(item.월).padStart(2,'0')}-${String(item.일).padStart(2,'0')}`,
           name: item.아파트,
@@ -1356,7 +1360,11 @@ async function fetchRealTrade(aptId, lawdCd, aptName) {
     results.sort((a,b) => b.date.localeCompare(a.date));
 
     if (results.length === 0) {
-      resultEl.innerHTML = `<div style="color:var(--text3)">최근 3개월 거래 없음 (법정동코드: ${lawdCd})<br><small>단지 편집에서 시/군/구 선택 후 저장하면 법정동코드가 갱신됩니다</small></div>`;
+      resultEl.innerHTML = `<div style="color:var(--text3)">
+        "${aptName}" 최근 3개월 거래 없음 (법정동: ${lawdCd})<br>
+        <button class="btn btn-outline" style="font-size:11px;margin-top:6px" 
+          onclick="fetchRealTradeAll('${aptId}', '${lawdCd}')">해당 법정동 전체 조회</button>
+      </div>`;
       return;
     }
 
@@ -1382,6 +1390,50 @@ function applyRealTrade(price, date, aptId) {
   document.getElementById('inp_date').value = date;
   document.getElementById('inp_buy').value = price;
   toast(`${date} 실거래가 ${(price/10000).toFixed(2)}억 입력`);
+}
+
+async function fetchRealTradeAll(aptId, lawdCd) {
+  // 단지명 필터 없이 전체 조회
+  const resultEl = document.getElementById(`realtrade_result_${aptId}`);
+  const apiKey = localStorage.getItem('rtms_key') || '';
+  resultEl.innerHTML = '<div class="loading">전체 조회 중...</div>';
+
+  const now = new Date();
+  const months = [];
+  for (let i = 2; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+
+  const REALTRADE_FN = 'https://xyervpopuptydcizofow.supabase.co/functions/v1/realtrade';
+  const results = [];
+  for (const ym of months) {
+    const res = await fetch(`${REALTRADE_FN}?lawdCd=${lawdCd}&dealYmd=${ym}&apiKey=${encodeURIComponent(apiKey)}`);
+    const json = await res.json();
+    const items = json?.response?.body?.items?.item || [];
+    const arr = Array.isArray(items) ? items : (items && Object.keys(items).length ? [items] : []);
+    arr.forEach(item => {
+      if (!item.년) return;
+      results.push({
+        date: `${item.년}-${String(item.월).padStart(2,'0')}-${String(item.일).padStart(2,'0')}`,
+        name: item.아파트, area: parseFloat(item.전용면적),
+        price: parseInt((item.거래금액||'').replace(/,/g,'')), floor: item.층,
+      });
+    });
+  }
+  results.sort((a,b) => b.date.localeCompare(a.date));
+  if (results.length === 0) { resultEl.innerHTML = '<div style="color:var(--text3)">거래 없음</div>'; return; }
+  resultEl.innerHTML = `
+    <div class="api-result">
+      <div class="api-tr hdr"><span>날짜</span><span>단지명</span><span>가격</span><span>면적</span><span>층</span></div>
+      ${results.slice(0,30).map(r => `
+      <div class="api-tr" onclick="applyRealTrade(${r.price}, '${r.date}', '${aptId}')">
+        <span>${r.date}</span><span style="color:var(--text2)">${r.name||'-'}</span>
+        <span class="api-price">${(r.price/10000).toFixed(2)}억</span>
+        <span class="api-info">${r.area}㎡</span><span class="api-info">${r.floor}층</span>
+      </div>`).join('')}
+    </div>
+    <div style="color:var(--text3);padding:5px 8px;font-size:10px">전체 ${results.length}건</div>`;
 }
 
 async function saveRecord(aptId) {
