@@ -1343,10 +1343,6 @@ async function fetchRealTrade(aptId, lawdCd, aptName) {
       const arr = Array.isArray(items) ? items : (items && Object.keys(items).length ? [items] : []);
       arr.forEach(item => {
         if (!item.년) return;
-        // 단지명 필터 (앞 4글자 매칭)
-        const nameMatch = aptName.replace(/\s/g,'').slice(0,4);
-        const itemName = (item.아파트||'').replace(/\s/g,'');
-        if (!itemName.includes(nameMatch) && !nameMatch.includes(itemName.slice(0,3))) return;
         results.push({
           date: `${item.년}-${String(item.월).padStart(2,'0')}-${String(item.일).padStart(2,'0')}`,
           name: item.아파트,
@@ -1360,7 +1356,7 @@ async function fetchRealTrade(aptId, lawdCd, aptName) {
     results.sort((a,b) => b.date.localeCompare(a.date));
 
     if (results.length === 0) {
-      resultEl.innerHTML = `<div style="color:var(--text3)">최근 3개월 거래 없음 (법정동: ${lawdCd})<br><small>단지명 필터: "${aptName.slice(0,4)}"</small></div>`;
+      resultEl.innerHTML = `<div style="color:var(--text3)">최근 3개월 거래 없음 (법정동코드: ${lawdCd})<br><small>단지 편집에서 시/군/구 선택 후 저장하면 법정동코드가 갱신됩니다</small></div>`;
       return;
     }
 
