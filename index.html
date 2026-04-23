@@ -1226,25 +1226,19 @@ function renderDetail(apt) {
   <div class="sec">
     <div class="sec-title">
       <div class="sec-title-l">실거래가 조회</div>
+      <button class="btn btn-amber" style="font-size:11px" onclick="fetchRealTrade('${apt.id}', '${apt.lawd_cd||''}', '${apt.name}')">🔍 공공API 조회</button>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <a href="https://search.naver.com/search.naver?query=아실+${encName}" target="_blank"
-        class="btn btn-outline" style="text-decoration:none;color:var(--green);font-size:12px">
-        📊 아실 실거래가
-      </a>
+        class="btn btn-outline" style="text-decoration:none;color:var(--green);font-size:12px">📊 아실</a>
       <a href="https://search.naver.com/search.naver?query=호갱노노+${encName}" target="_blank"
-        class="btn btn-outline" style="text-decoration:none;color:var(--amber);font-size:12px">
-        🏘 호갱노노 실거래가
-      </a>
+        class="btn btn-outline" style="text-decoration:none;color:var(--amber);font-size:12px">🏘 호갱노노</a>
       <a href="https://search.naver.com/search.naver?query=리치고+${encName}" target="_blank"
-        class="btn btn-outline" style="text-decoration:none;color:var(--purple);font-size:12px">
-        💎 리치고 실거래가
-      </a>
+        class="btn btn-outline" style="text-decoration:none;color:var(--purple);font-size:12px">💎 리치고</a>
       ${apt.link ? `<a href="${apt.link}?tab=trade" target="_blank"
-        class="btn btn-outline" style="text-decoration:none;color:var(--blue);font-size:12px">
-        🔗 네이버 실거래가
-      </a>` : ''}
+        class="btn btn-outline" style="text-decoration:none;color:var(--blue);font-size:12px">🔗 네이버</a>` : ''}
     </div>
+    <div id="realtrade_result_${apt.id}" style="font-size:11px;color:var(--text3)">공공API 조회 버튼을 누르면 최근 3개월 실거래 내역을 표시합니다</div>
   </div>
 
   <!-- 시세 입력 -->
@@ -1314,6 +1308,86 @@ function renderDetail(apt) {
 // ══════════════════════════════════════════
 //  시세 저장/삭제
 // ══════════════════════════════════════════
+async function fetchRealTrade(aptId, lawdCd, aptName) {
+  const resultEl = document.getElementById(`realtrade_result_${aptId}`);
+  const apiKey = localStorage.getItem('rtms_key') || '';
+
+  if (!apiKey) { toast('⚙️ 설정에서 API 키를 먼저 입력하세요', 'err'); return; }
+  if (!lawdCd) { toast('단지 편집에서 시/군/구를 선택해 법정동 코드를 저장하세요', 'err'); return; }
+
+  resultEl.innerHTML = '<div class="loading">조회 중...</div>';
+
+  try {
+    const now = new Date();
+    const months = [];
+    for (let i = 2; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}`);
+    }
+
+    const REALTRADE_FN = 'https://xyervpopuptydcizofow.supabase.co/functions/v1/realtrade';
+    const results = [];
+
+    for (const ym of months) {
+      const url = `${REALTRADE_FN}?lawdCd=${lawdCd}&dealYmd=${ym}&apiKey=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url);
+      const json = await res.json();
+
+      const resultCode = json?.response?.header?.resultCode;
+      if (resultCode && resultCode !== '00' && resultCode !== '000') {
+        resultEl.innerHTML = `<div style="color:var(--red)">API 오류: ${json?.response?.header?.resultMsg} (코드: ${resultCode})</div>`;
+        return;
+      }
+
+      const items = json?.response?.body?.items?.item || [];
+      const arr = Array.isArray(items) ? items : (items && Object.keys(items).length ? [items] : []);
+      arr.forEach(item => {
+        if (!item.년) return;
+        // 단지명 필터 (앞 4글자 매칭)
+        const nameMatch = aptName.replace(/\s/g,'').slice(0,4);
+        const itemName = (item.아파트||'').replace(/\s/g,'');
+        if (!itemName.includes(nameMatch) && !nameMatch.includes(itemName.slice(0,3))) return;
+        results.push({
+          date: `${item.년}-${String(item.월).padStart(2,'0')}-${String(item.일).padStart(2,'0')}`,
+          name: item.아파트,
+          area: parseFloat(item.전용면적),
+          price: parseInt((item.거래금액||'').replace(/,/g,'')),
+          floor: item.층,
+        });
+      });
+    }
+
+    results.sort((a,b) => b.date.localeCompare(a.date));
+
+    if (results.length === 0) {
+      resultEl.innerHTML = `<div style="color:var(--text3)">최근 3개월 거래 없음 (법정동: ${lawdCd})<br><small>단지명 필터: "${aptName.slice(0,4)}"</small></div>`;
+      return;
+    }
+
+    resultEl.innerHTML = `
+      <div class="api-result">
+        <div class="api-tr hdr"><span>날짜</span><span>단지명</span><span>가격</span><span>면적</span><span>층</span></div>
+        ${results.slice(0,20).map(r => `
+        <div class="api-tr" onclick="applyRealTrade(${r.price}, '${r.date}', '${aptId}')" title="클릭하면 매매가로 입력">
+          <span>${r.date}</span>
+          <span style="color:var(--text2)">${r.name||'-'}</span>
+          <span class="api-price">${(r.price/10000).toFixed(2)}억</span>
+          <span class="api-info">${r.area}㎡</span>
+          <span class="api-info">${r.floor}층</span>
+        </div>`).join('')}
+      </div>
+      <div style="color:var(--text3);padding:5px 8px;font-size:10px">클릭하면 아래 시세 입력에 매매가 자동입력 (최근 3개월 ${results.length}건)</div>`;
+  } catch(e) {
+    resultEl.innerHTML = `<div style="color:var(--red)">오류: ${e.message}</div>`;
+  }
+}
+
+function applyRealTrade(price, date, aptId) {
+  document.getElementById('inp_date').value = date;
+  document.getElementById('inp_buy').value = price;
+  toast(`${date} 실거래가 ${(price/10000).toFixed(2)}억 입력`);
+}
+
 async function saveRecord(aptId) {
   if (!currentUser) { showLogin(); return; }
   const date = document.getElementById('inp_date').value;
