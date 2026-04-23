@@ -615,8 +615,12 @@ async function dbLoadSise() {
 }
 
 async function dbSaveApt(aptData) {
+  console.log('dbSaveApt 파라미터:', JSON.stringify(aptData, null, 2));
   const { data, error } = await sb.from('complexes').upsert(aptData, { onConflict: 'id' }).select().single();
-  if (error) throw error;
+  if (error) {
+    console.error('dbSaveApt 오류:', error);
+    throw error;
+  }
   return data;
 }
 
@@ -1317,6 +1321,8 @@ async function fetchRealTrade(aptId, lawdCd, aptName) {
   const resultEl = document.getElementById(`realtrade_result_${aptId}`);
   const apiKey = localStorage.getItem('rtms_key') || '';
 
+  console.log('fetchRealTrade 파라미터:', { aptId, lawdCd, aptName, apiKey: apiKey.slice(0,10)+'...' });
+
   if (!apiKey) { toast('⚙️ 설정에서 API 키를 먼저 입력하세요', 'err'); return; }
   if (!lawdCd) { toast('단지 편집에서 시/군/구를 선택해 법정동 코드를 저장하세요', 'err'); return; }
 
@@ -1335,6 +1341,7 @@ async function fetchRealTrade(aptId, lawdCd, aptName) {
 
     for (const ym of months) {
       const url = `${REALTRADE_FN}?lawdCd=${lawdCd}&dealYmd=${ym}&apiKey=${encodeURIComponent(apiKey)}`;
+      console.log('realtrade 호출 URL:', url.replace(apiKey, apiKey.slice(0,10)+'...'));
       const res = await fetch(url);
       const json = await res.json();
 
