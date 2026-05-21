@@ -350,6 +350,14 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 .col-toggle-btn{padding:3px 9px;border-radius:4px;border:1px solid var(--border);background:var(--surf2);color:var(--text3);font-size:11px;cursor:pointer;transition:all .15s;font-family:'Noto Sans KR',sans-serif}
 .col-toggle-btn.on{background:var(--blue);border-color:var(--blue);color:#fff}
 .listings-empty{padding:60px 20px;text-align:center;color:var(--text3);font-size:13px}
+.cx-combobox{position:relative;width:220px;flex-shrink:0}
+.cx-input{width:100%;padding:6px 10px;background:var(--surf2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none;font-family:'Noto Sans KR',sans-serif;box-sizing:border-box}
+.cx-input:focus{border-color:var(--blue)}
+.cx-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surf1);border:1px solid var(--border);border-radius:8px;max-height:260px;overflow-y:auto;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.35);display:none}
+.cx-option{padding:8px 12px;font-size:13px;cursor:pointer;color:var(--text)}
+.cx-option:hover{background:var(--surf3)}
+.cx-option.sel{color:var(--blue);font-weight:500}
+.cx-empty{padding:10px 12px;font-size:12px;color:var(--text3);cursor:default}
 </style>
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=72a2be5c7e565f1db3befdc3dde46f45&libraries=services"></script>
 </head>
@@ -428,10 +436,11 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
   <div class="listings-layout">
     <!-- 툴바 -->
     <div class="listings-toolbar">
-      <input type="text" class="search-box" id="listingsCxSearch" placeholder="단지명 검색..." style="width:160px" oninput="filterComplexDropdown()">
-      <select class="sel" id="listingsCxSel" onchange="onListingsCxChange(this.value)" style="width:200px">
-        <option value="">단지명 선택...</option>
-      </select>
+      <div class="cx-combobox" id="cxCombobox">
+        <input class="cx-input" id="listingsCxSearch" placeholder="단지명 검색/선택..." autocomplete="off"
+          oninput="onCxInput()" onfocus="onCxFocus()" onblur="onCxBlur()">
+        <div class="cx-dropdown" id="cxDropdown"></div>
+      </div>
       <div style="height:20px;width:1px;background:var(--border);margin:0 4px"></div>
       <span style="font-size:11px;color:var(--text3);white-space:nowrap">컬럼:</span>
       <div id="colToggles" style="display:flex;gap:4px;flex-wrap:wrap"></div>
@@ -2045,34 +2054,50 @@ async function initListingsTab() {
 }
 
 async function loadComplexDropdown() {
-  const sel = document.getElementById('listingsCxSel');
-  sel.innerHTML = '<option value="">불러오는 중...</option>';
+  const inp = document.getElementById('listingsCxSearch');
+  inp.placeholder = '불러오는 중...';
+  inp.disabled = true;
   const { data, error } = await sb.from('apt_listings')
     .select('complex_number,complex_name');
-  if (error) { sel.innerHTML = '<option value="">오류: ' + error.message + '</option>'; return; }
+  inp.disabled = false;
+  inp.placeholder = '단지명 검색/선택...';
+  if (error) { inp.placeholder = '오류: ' + error.message; return; }
   const map = {};
   (data || []).forEach(r => { map[r.complex_number] = r.complex_name; });
   listingsAllComplexes = Object.entries(map).sort((a, b) => a[1].localeCompare(b[1], 'ko'));
-  renderComplexDropdown();
 }
 
-function filterComplexDropdown() {
-  renderComplexDropdown();
+function onCxFocus() {
+  renderCxDropdown();
+  document.getElementById('cxDropdown').style.display = 'block';
 }
 
-function renderComplexDropdown() {
+function onCxBlur() {
+  setTimeout(() => { document.getElementById('cxDropdown').style.display = 'none'; }, 180);
+}
+
+function onCxInput() {
+  renderCxDropdown();
+  document.getElementById('cxDropdown').style.display = 'block';
+}
+
+function renderCxDropdown() {
   const q = (document.getElementById('listingsCxSearch')?.value || '').trim().toLowerCase();
   const filtered = q ? listingsAllComplexes.filter(([, name]) => name.toLowerCase().includes(q)) : listingsAllComplexes;
-  const sel = document.getElementById('listingsCxSel');
-  const curVal = sel.value;
-  sel.innerHTML = '<option value="">단지명 선택...</option>';
-  filtered.forEach(([num, name]) => {
-    const o = document.createElement('option');
-    o.value = num;
-    o.textContent = name;
-    if (num === curVal) o.selected = true;
-    sel.appendChild(o);
-  });
+  const el = document.getElementById('cxDropdown');
+  if (filtered.length === 0) {
+    el.innerHTML = '<div class="cx-empty">검색 결과 없음</div>';
+    return;
+  }
+  el.innerHTML = filtered.map(([num, name]) =>
+    `<div class="cx-option${num === listingsCurrentCx ? ' sel' : ''}" onmousedown="selectCxOption('${num}','${name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">${name}</div>`
+  ).join('');
+}
+
+function selectCxOption(num, name) {
+  document.getElementById('listingsCxSearch').value = name;
+  document.getElementById('cxDropdown').style.display = 'none';
+  onListingsCxChange(num);
 }
 
 async function onListingsCxChange(complexNumber) {
