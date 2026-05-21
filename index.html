@@ -428,10 +428,9 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
   <div class="listings-layout">
     <!-- 툴바 -->
     <div class="listings-toolbar">
-      <select class="sel" id="listingsRunSel" onchange="onListingsRunChange(this.value)" style="width:220px">
-        <option value="">수집일 선택...</option>
+      <select class="sel" id="listingsCxSel" onchange="onListingsCxChange(this.value)" style="width:220px">
+        <option value="">단지명 선택...</option>
       </select>
-      <input type="text" class="search-box" id="listingsSearch" placeholder="단지명 검색..." style="width:160px" oninput="renderListingsComplexes()">
       <div style="height:20px;width:1px;background:var(--border);margin:0 4px"></div>
       <span style="font-size:11px;color:var(--text3);white-space:nowrap">컬럼:</span>
       <div id="colToggles" style="display:flex;gap:4px;flex-wrap:wrap"></div>
@@ -439,10 +438,10 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
     <!-- 바디 -->
     <div class="listings-body">
       <div class="listings-left" id="listingsLeft">
-        <div class="listings-empty">수집일을 선택하세요</div>
+        <div class="listings-empty">단지를 선택하세요</div>
       </div>
       <div class="listings-right" id="listingsRight">
-        <div class="listings-empty">단지를 선택하세요</div>
+        <div class="listings-empty">수집일을 선택하세요</div>
       </div>
     </div>
   </div>
@@ -2018,21 +2017,21 @@ init();
 //  매물 수집 탭
 // ══════════════════════════════════════════
 let listingsInitialized = false;
-let listingsCxList = [];
-let listingsCurrentRunId = null;
-let listingsCurrentCx = null;
+let listingsCurrentCx = null;   // 선택된 complex_number
+let listingsRunList = [];        // 선택된 단지의 수집일 목록
+let listingsCurrentRunId = null; // 선택된 run id
 let listingsArticles = [];
 let listingsSortKey = 'deal_price_num';
 let listingsSortDir = 1; // 1=오름차순, -1=내림차순
 
 const LISTINGS_COLS = [
-  { key:'trade_type',      label:'유형',   on:true  },
-  { key:'exclusive_space', label:'면적',   on:true  },
-  { key:'dong_name',       label:'동',     on:true  },
-  { key:'floor_info',      label:'층',     on:true  },
-  { key:'direction',       label:'향',     on:true  },
-  { key:'deal_price',      label:'가격',   on:true  },
-  { key:'broker',          label:'중개사', on:true  },
+  { key:'trade_type',      label:'유형',   on:true },
+  { key:'exclusive_space', label:'면적',   on:true },
+  { key:'dong_name',       label:'동',     on:true },
+  { key:'floor_info',      label:'층',     on:true },
+  { key:'direction',       label:'향',     on:true },
+  { key:'deal_price',      label:'가격',   on:true },
+  { key:'broker',          label:'중개사', on:true },
   { key:'confirm_date',    label:'등록일', on:true },
   { key:'description',     label:'설명',   on:true },
   { key:'link',            label:'링크',   on:true },
@@ -2040,80 +2039,86 @@ const LISTINGS_COLS = [
 
 async function initListingsTab() {
   renderColToggles();
-  await loadListingsRuns();
+  await loadComplexDropdown();
 }
 
-async function loadListingsRuns() {
-  const sel = document.getElementById('listingsRunSel');
+async function loadComplexDropdown() {
+  const sel = document.getElementById('listingsCxSel');
   sel.innerHTML = '<option value="">불러오는 중...</option>';
-  const { data, error } = await sb.from('apt_scrape_runs')
-    .select('id,run_at,status,total_count')
-    .order('run_at', { ascending: false })
-    .limit(60);
+  const { data, error } = await sb.from('apt_listings')
+    .select('complex_number,complex_name');
   if (error) { sel.innerHTML = '<option value="">오류: ' + error.message + '</option>'; return; }
-  sel.innerHTML = '<option value="">수집일 선택...</option>';
-  (data || []).forEach(r => {
-    const dt = new Date(r.run_at).toLocaleString('ko-KR', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  // 중복 제거
+  const map = {};
+  (data || []).forEach(r => { map[r.complex_number] = r.complex_name; });
+  const list = Object.entries(map).sort((a, b) => a[1].localeCompare(b[1], 'ko'));
+  sel.innerHTML = '<option value="">단지명 선택...</option>';
+  list.forEach(([num, name]) => {
     const o = document.createElement('option');
-    o.value = r.id;
-    o.textContent = dt + ' (' + r.total_count + '건)';
+    o.value = num;
+    o.textContent = name;
     sel.appendChild(o);
   });
 }
 
-async function onListingsRunChange(runId) {
-  listingsCurrentRunId = runId || null;
-  listingsCurrentCx = null;
-  document.getElementById('listingsRight').innerHTML = '<div class="listings-empty">단지를 선택하세요</div>';
-  if (!runId) {
-    document.getElementById('listingsLeft').innerHTML = '<div class="listings-empty">수집일을 선택하세요</div>';
+async function onListingsCxChange(complexNumber) {
+  listingsCurrentCx = complexNumber || null;
+  listingsCurrentRunId = null;
+  listingsArticles = [];
+  document.getElementById('listingsRight').innerHTML = '<div class="listings-empty">수집일을 선택하세요</div>';
+  if (!complexNumber) {
+    document.getElementById('listingsLeft').innerHTML = '<div class="listings-empty">단지를 선택하세요</div>';
     return;
   }
-  await loadListingsComplexes(runId);
+  await loadRunsForComplex(complexNumber);
 }
 
-async function loadListingsComplexes(runId) {
+async function loadRunsForComplex(complexNumber) {
   const el = document.getElementById('listingsLeft');
   el.innerHTML = '<div class="listings-empty">로딩 중...</div>';
-  const { data, error } = await sb.from('apt_listings')
-    .select('complex_number,complex_name')
-    .eq('run_id', runId);
-  if (error) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + error.message + '</div>'; return; }
-  const map = {};
-  (data || []).forEach(r => {
-    if (!map[r.complex_number]) map[r.complex_number] = { complex_number: r.complex_number, complex_name: r.complex_name, count: 0 };
-    map[r.complex_number].count++;
-  });
-  listingsCxList = Object.values(map).sort((a, b) => a.complex_name.localeCompare(b.complex_name, 'ko'));
-  renderListingsComplexes();
+
+  // 해당 단지의 run_id 목록 조회
+  const { data: listData, error: listErr } = await sb.from('apt_listings')
+    .select('run_id')
+    .eq('complex_number', complexNumber);
+  if (listErr) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + listErr.message + '</div>'; return; }
+
+  const runIds = [...new Set((listData || []).map(r => r.run_id))];
+  if (runIds.length === 0) { el.innerHTML = '<div class="listings-empty">수집 이력 없음</div>'; return; }
+
+  // run 상세 조회
+  const { data: runsData, error: runsErr } = await sb.from('apt_scrape_runs')
+    .select('id,run_at,total_count')
+    .in('id', runIds)
+    .order('run_at', { ascending: false });
+  if (runsErr) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + runsErr.message + '</div>'; return; }
+
+  listingsRunList = runsData || [];
+  renderListingsRuns();
 }
 
-function renderListingsComplexes() {
-  const q = (document.getElementById('listingsSearch')?.value || '').trim().toLowerCase();
-  const list = q ? listingsCxList.filter(c => c.complex_name.toLowerCase().includes(q)) : listingsCxList;
+function renderListingsRuns() {
   const el = document.getElementById('listingsLeft');
-  if (list.length === 0) { el.innerHTML = '<div class="listings-empty">단지 없음</div>'; return; }
-  el.innerHTML = list.map(c => {
-    const sel = listingsCurrentCx === c.complex_number ? ' sel' : '';
-    const cn = c.complex_name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/'/g,'&#39;');
-    const num = c.complex_number.replace(/'/g,'&#39;');
-    return `<div class="list-item${sel}" onclick="selectListingsComplex('${num}','${cn}')">
-      <div class="li-name">${c.complex_name}</div>
-      <div class="li-meta">${c.count}건</div>
+  if (listingsRunList.length === 0) { el.innerHTML = '<div class="listings-empty">수집 이력 없음</div>'; return; }
+  el.innerHTML = listingsRunList.map(r => {
+    const dt = new Date(r.run_at).toLocaleString('ko-KR', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const isSel = listingsCurrentRunId === r.id ? ' sel' : '';
+    return `<div class="list-item${isSel}" onclick="selectListingsRun('${r.id}')">
+      <div class="li-name">${dt}</div>
+      <div class="li-meta">${r.total_count}건</div>
     </div>`;
   }).join('');
 }
 
-async function selectListingsComplex(complexNumber, complexName) {
-  listingsCurrentCx = complexNumber;
-  renderListingsComplexes();
-  if (!listingsCurrentRunId) return;
+async function selectListingsRun(runId) {
+  listingsCurrentRunId = runId;
+  renderListingsRuns();
   const el = document.getElementById('listingsRight');
   el.innerHTML = '<div class="listings-empty">로딩 중...</div>';
   const { data, error } = await sb.from('apt_listings')
     .select('*')
-    .eq('run_id', listingsCurrentRunId)
-    .eq('complex_number', complexNumber)
+    .eq('run_id', runId)
+    .eq('complex_number', listingsCurrentCx)
     .order('deal_price_num', { ascending: true, nullsFirst: false });
   if (error) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + error.message + '</div>'; return; }
   listingsArticles = data || [];
