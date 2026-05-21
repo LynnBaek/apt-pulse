@@ -333,6 +333,20 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 .trend.up{background:rgba(239,68,68,.15);color:#ef4444}
 .trend.dn{background:rgba(16,185,129,.15);color:#10b981}
 .trend.flat{background:rgba(100,116,139,.15);color:#64748b}
+
+/* ── 매물 수집 탭 ──────────────────────── */
+.listings-layout{display:flex;flex-direction:column;width:100%;height:100%}
+.listings-toolbar{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--surf1);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.listings-body{display:grid;grid-template-columns:240px 1fr;flex:1;overflow:hidden;min-height:0}
+.listings-left{border-right:1px solid var(--border);overflow-y:auto}
+.listings-right{overflow:auto}
+.listings-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.listings-tbl th{position:sticky;top:0;background:var(--surf2);z-index:1;padding:8px 10px;text-align:left;font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text2)}
+.listings-tbl td{padding:7px 10px;border-bottom:1px solid var(--border2);color:var(--text);white-space:nowrap}
+.listings-tbl tr:hover td{background:var(--surf2)}
+.col-toggle-btn{padding:3px 9px;border-radius:4px;border:1px solid var(--border);background:var(--surf2);color:var(--text3);font-size:11px;cursor:pointer;transition:all .15s;font-family:'Noto Sans KR',sans-serif}
+.col-toggle-btn.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.listings-empty{padding:60px 20px;text-align:center;color:var(--text3);font-size:13px}
 </style>
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=72a2be5c7e565f1db3befdc3dde46f45&libraries=services"></script>
 </head>
@@ -344,6 +358,7 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
   <button class="tab active" onclick="switchTab('mgr')">단지 관리</button>
   <button class="tab" onclick="switchTab('sheet')">시트 뷰</button>
   <button class="tab" onclick="switchTab('map')">지도 뷰</button>
+  <button class="tab" onclick="switchTab('listings')">매물 수집</button>
   <div class="tabbar-right">
     <div class="theme-toggle" onclick="toggleTheme()" title="라이트/다크 전환">
       <div class="toggle-track"><div class="toggle-thumb"></div></div>
@@ -402,6 +417,31 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
       <button class="btn btn-primary" style="font-size:11px" onclick="addNewDateRow()">+ 날짜 추가</button>
     </div>
     <div class="sheet-wrap" id="sheetWrap"></div>
+  </div>
+</div>
+
+<!-- ════ 페이지 4: 매물 수집 ════ -->
+<div class="page" id="page-listings">
+  <div class="listings-layout">
+    <!-- 툴바 -->
+    <div class="listings-toolbar">
+      <select class="sel" id="listingsRunSel" onchange="onListingsRunChange(this.value)" style="width:220px">
+        <option value="">수집일 선택...</option>
+      </select>
+      <input type="text" class="search-box" id="listingsSearch" placeholder="단지명 검색..." style="width:160px" oninput="renderListingsComplexes()">
+      <div style="height:20px;width:1px;background:var(--border);margin:0 4px"></div>
+      <span style="font-size:11px;color:var(--text3);white-space:nowrap">컬럼:</span>
+      <div id="colToggles" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+    </div>
+    <!-- 바디 -->
+    <div class="listings-body">
+      <div class="listings-left" id="listingsLeft">
+        <div class="listings-empty">수집일을 선택하세요</div>
+      </div>
+      <div class="listings-right" id="listingsRight">
+        <div class="listings-empty">단지를 선택하세요</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1095,7 +1135,7 @@ function showMapInfo(apt) {
 }
 
 function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['mgr','sheet','map'][i] === tab));
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['mgr','sheet','map','listings'][i] === tab));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + tab).classList.add('active');
   if (tab === 'sheet') {
@@ -1104,6 +1144,7 @@ function switchTab(tab) {
     renderSheet();
   }
   if (tab === 'map') initMap();
+  if (tab === 'listings' && !listingsInitialized) { listingsInitialized = true; initListingsTab(); }
 }
 
 // ══════════════════════════════════════════
@@ -1969,6 +2010,143 @@ async function init() {
 }
 
 init();
+
+// ══════════════════════════════════════════
+//  매물 수집 탭
+// ══════════════════════════════════════════
+let listingsInitialized = false;
+let listingsCxList = [];
+let listingsCurrentRunId = null;
+let listingsCurrentCx = null;
+let listingsArticles = [];
+
+const LISTINGS_COLS = [
+  { key:'trade_type',      label:'유형',   on:true  },
+  { key:'exclusive_space', label:'면적',   on:true  },
+  { key:'dong_name',       label:'동',     on:true  },
+  { key:'floor_info',      label:'층',     on:true  },
+  { key:'direction',       label:'향',     on:true  },
+  { key:'deal_price',      label:'가격',   on:true  },
+  { key:'broker',          label:'중개사', on:true  },
+  { key:'confirm_date',    label:'등록일', on:false },
+  { key:'description',     label:'설명',   on:false },
+  { key:'link',            label:'링크',   on:false },
+];
+
+async function initListingsTab() {
+  renderColToggles();
+  await loadListingsRuns();
+}
+
+async function loadListingsRuns() {
+  const sel = document.getElementById('listingsRunSel');
+  sel.innerHTML = '<option value="">불러오는 중...</option>';
+  const { data, error } = await sb.from('apt_scrape_runs')
+    .select('id,run_at,status,total_count')
+    .order('run_at', { ascending: false })
+    .limit(60);
+  if (error) { sel.innerHTML = '<option value="">오류: ' + error.message + '</option>'; return; }
+  sel.innerHTML = '<option value="">수집일 선택...</option>';
+  (data || []).forEach(r => {
+    const dt = new Date(r.run_at).toLocaleString('ko-KR', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const o = document.createElement('option');
+    o.value = r.id;
+    o.textContent = dt + ' (' + r.total_count + '건)';
+    sel.appendChild(o);
+  });
+}
+
+async function onListingsRunChange(runId) {
+  listingsCurrentRunId = runId || null;
+  listingsCurrentCx = null;
+  document.getElementById('listingsRight').innerHTML = '<div class="listings-empty">단지를 선택하세요</div>';
+  if (!runId) {
+    document.getElementById('listingsLeft').innerHTML = '<div class="listings-empty">수집일을 선택하세요</div>';
+    return;
+  }
+  await loadListingsComplexes(runId);
+}
+
+async function loadListingsComplexes(runId) {
+  const el = document.getElementById('listingsLeft');
+  el.innerHTML = '<div class="listings-empty">로딩 중...</div>';
+  const { data, error } = await sb.from('apt_listings')
+    .select('complex_number,complex_name')
+    .eq('run_id', runId);
+  if (error) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + error.message + '</div>'; return; }
+  const map = {};
+  (data || []).forEach(r => {
+    if (!map[r.complex_number]) map[r.complex_number] = { complex_number: r.complex_number, complex_name: r.complex_name, count: 0 };
+    map[r.complex_number].count++;
+  });
+  listingsCxList = Object.values(map).sort((a, b) => a.complex_name.localeCompare(b.complex_name, 'ko'));
+  renderListingsComplexes();
+}
+
+function renderListingsComplexes() {
+  const q = (document.getElementById('listingsSearch')?.value || '').trim().toLowerCase();
+  const list = q ? listingsCxList.filter(c => c.complex_name.toLowerCase().includes(q)) : listingsCxList;
+  const el = document.getElementById('listingsLeft');
+  if (list.length === 0) { el.innerHTML = '<div class="listings-empty">단지 없음</div>'; return; }
+  el.innerHTML = list.map(c => {
+    const sel = listingsCurrentCx === c.complex_number ? ' sel' : '';
+    const cn = c.complex_name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/'/g,'&#39;');
+    const num = c.complex_number.replace(/'/g,'&#39;');
+    return `<div class="list-item${sel}" onclick="selectListingsComplex('${num}','${cn}')">
+      <div class="li-name">${c.complex_name}</div>
+      <div class="li-meta">${c.count}건</div>
+    </div>`;
+  }).join('');
+}
+
+async function selectListingsComplex(complexNumber, complexName) {
+  listingsCurrentCx = complexNumber;
+  renderListingsComplexes();
+  if (!listingsCurrentRunId) return;
+  const el = document.getElementById('listingsRight');
+  el.innerHTML = '<div class="listings-empty">로딩 중...</div>';
+  const { data, error } = await sb.from('apt_listings')
+    .select('*')
+    .eq('run_id', listingsCurrentRunId)
+    .eq('complex_number', complexNumber)
+    .order('deal_price_num', { ascending: true, nullsFirst: false });
+  if (error) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + error.message + '</div>'; return; }
+  listingsArticles = data || [];
+  renderListingsTable();
+}
+
+function renderListingsTable() {
+  const el = document.getElementById('listingsRight');
+  const cols = LISTINGS_COLS.filter(c => c.on);
+  if (listingsArticles.length === 0) { el.innerHTML = '<div class="listings-empty">데이터 없음</div>'; return; }
+  const thead = '<tr>' + cols.map(c => '<th>' + c.label + '</th>').join('') + '</tr>';
+  const tbody = listingsArticles.map(a => {
+    const cells = cols.map(c => {
+      let v = a[c.key] ?? '';
+      if (c.key === 'link' && v) v = '<a href="' + v + '" target="_blank" style="color:var(--blue)">🔗 보기</a>';
+      if (c.key === 'exclusive_space' && v !== '') v = v + 'm²';
+      const safe = typeof v === 'string' ? v.replace(/</g,'&lt;') : v;
+      return '<td>' + (c.key === 'link' ? v : safe) + '</td>';
+    }).join('');
+    return '<tr>' + cells + '</tr>';
+  }).join('');
+  el.innerHTML = '<table class="listings-tbl"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
+}
+
+function toggleListingsCol(key) {
+  const col = LISTINGS_COLS.find(c => c.key === key);
+  if (col) col.on = !col.on;
+  renderColToggles();
+  if (listingsCurrentCx) renderListingsTable();
+}
+
+function renderColToggles() {
+  const el = document.getElementById('colToggles');
+  if (!el) return;
+  el.innerHTML = LISTINGS_COLS.map(c =>
+    '<button class="col-toggle-btn' + (c.on ? ' on' : '') + '" onclick="toggleListingsCol(\'' + c.key + '\')">' + c.label + '</button>'
+  ).join('');
+}
 </script>
 </body>
 </html>
