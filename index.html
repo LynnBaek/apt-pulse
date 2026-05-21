@@ -2083,17 +2083,21 @@ async function loadRunsForComplex(complexNumber) {
     .eq('complex_number', complexNumber);
   if (listErr) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + listErr.message + '</div>'; return; }
 
-  const runIds = [...new Set((listData || []).map(r => r.run_id))];
+  // 단지별 run_id 건수 집계
+  const countPerRun = {};
+  (listData || []).forEach(r => { countPerRun[r.run_id] = (countPerRun[r.run_id] || 0) + 1; });
+
+  const runIds = Object.keys(countPerRun);
   if (runIds.length === 0) { el.innerHTML = '<div class="listings-empty">수집 이력 없음</div>'; return; }
 
   // run 상세 조회
   const { data: runsData, error: runsErr } = await sb.from('apt_scrape_runs')
-    .select('id,run_at,total_count')
+    .select('id,run_at')
     .in('id', runIds)
     .order('run_at', { ascending: false });
   if (runsErr) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + runsErr.message + '</div>'; return; }
 
-  listingsRunList = runsData || [];
+  listingsRunList = (runsData || []).map(r => ({ ...r, cx_count: countPerRun[r.id] || 0 }));
   renderListingsRuns();
 }
 
@@ -2105,7 +2109,7 @@ function renderListingsRuns() {
     const isSel = listingsCurrentRunId === r.id ? ' sel' : '';
     return `<div class="list-item${isSel}" onclick="selectListingsRun('${r.id}')">
       <div class="li-name">${dt}</div>
-      <div class="li-meta">${r.total_count}건</div>
+      <div class="li-meta">${r.cx_count}건</div>
     </div>`;
   }).join('');
 }
