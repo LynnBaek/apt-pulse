@@ -428,7 +428,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
   <div class="listings-layout">
     <!-- 툴바 -->
     <div class="listings-toolbar">
-      <select class="sel" id="listingsCxSel" onchange="onListingsCxChange(this.value)" style="width:220px">
+      <input type="text" class="search-box" id="listingsCxSearch" placeholder="단지명 검색..." style="width:160px" oninput="filterComplexDropdown()">
+      <select class="sel" id="listingsCxSel" onchange="onListingsCxChange(this.value)" style="width:200px">
         <option value="">단지명 선택...</option>
       </select>
       <div style="height:20px;width:1px;background:var(--border);margin:0 4px"></div>
@@ -2017,6 +2018,7 @@ init();
 //  매물 수집 탭
 // ══════════════════════════════════════════
 let listingsInitialized = false;
+let listingsAllComplexes = [];   // [{num, name}] 전체 목록
 let listingsCurrentCx = null;   // 선택된 complex_number
 let listingsRunList = [];        // 선택된 단지의 수집일 목록
 let listingsCurrentRunId = null; // 선택된 run id
@@ -2048,15 +2050,27 @@ async function loadComplexDropdown() {
   const { data, error } = await sb.from('apt_listings')
     .select('complex_number,complex_name');
   if (error) { sel.innerHTML = '<option value="">오류: ' + error.message + '</option>'; return; }
-  // 중복 제거
   const map = {};
   (data || []).forEach(r => { map[r.complex_number] = r.complex_name; });
-  const list = Object.entries(map).sort((a, b) => a[1].localeCompare(b[1], 'ko'));
+  listingsAllComplexes = Object.entries(map).sort((a, b) => a[1].localeCompare(b[1], 'ko'));
+  renderComplexDropdown();
+}
+
+function filterComplexDropdown() {
+  renderComplexDropdown();
+}
+
+function renderComplexDropdown() {
+  const q = (document.getElementById('listingsCxSearch')?.value || '').trim().toLowerCase();
+  const filtered = q ? listingsAllComplexes.filter(([, name]) => name.toLowerCase().includes(q)) : listingsAllComplexes;
+  const sel = document.getElementById('listingsCxSel');
+  const curVal = sel.value;
   sel.innerHTML = '<option value="">단지명 선택...</option>';
-  list.forEach(([num, name]) => {
+  filtered.forEach(([num, name]) => {
     const o = document.createElement('option');
     o.value = num;
     o.textContent = name;
+    if (num === curVal) o.selected = true;
     sel.appendChild(o);
   });
 }
