@@ -341,11 +341,31 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 .listings-left{border-right:1px solid var(--border);overflow-y:auto}
 .listings-right{overflow:auto}
 .listings-tbl{width:100%;border-collapse:collapse;font-size:12px}
-.listings-tbl th{position:sticky;top:0;background:var(--surf2);z-index:1;padding:8px 10px;text-align:left;font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text2);cursor:pointer;user-select:none}
-.listings-tbl th:hover{color:var(--text);background:var(--surf3)}
+.listings-tbl th{position:sticky;top:0;background:var(--surf2);z-index:1;padding:8px 10px;text-align:left;font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text2);user-select:none}
+.listings-tbl th .th-row{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.listings-tbl th .th-label{cursor:pointer}
+.listings-tbl th .th-label:hover{color:var(--text)}
 .sort-arrow{margin-left:4px;opacity:.4;font-size:10px}
 .sort-arrow.active{opacity:1;color:var(--blue)}
+.col-filter-btn{flex-shrink:0;border:none;background:transparent;color:var(--text3);font-size:10px;cursor:pointer;padding:2px 4px;border-radius:3px;line-height:1}
+.col-filter-btn:hover{background:var(--surf3);color:var(--text)}
+.col-filter-btn.active{color:var(--blue)}
+.col-filter-dropdown{position:fixed;z-index:500;width:200px;background:var(--surf1);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.4);font-size:12px;color:var(--text);overflow:hidden}
+.col-filter-dropdown .cf-actions{display:flex;border-bottom:1px solid var(--border);}
+.col-filter-dropdown .cf-actions button{flex:1;padding:7px 0;background:transparent;border:none;color:var(--text2);font-size:11px;cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.col-filter-dropdown .cf-actions button:hover{background:var(--surf3);color:var(--text)}
+.col-filter-dropdown .cf-actions button:first-child{border-right:1px solid var(--border)}
+.col-filter-dropdown .cf-list{max-height:240px;overflow-y:auto;padding:4px}
+.col-filter-dropdown .cf-item{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:5px;cursor:pointer}
+.col-filter-dropdown .cf-item:hover{background:var(--surf3)}
+.col-filter-dropdown .cf-item input{flex-shrink:0;cursor:pointer}
+.col-filter-dropdown .cf-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.col-filter-dropdown .cf-count{flex-shrink:0;color:var(--text3);font-size:11px}
 .listings-tbl td{padding:7px 10px;border-bottom:1px solid var(--border2);color:var(--text);white-space:nowrap}
+.memo-cell{padding:0!important;white-space:normal}
+.memo-cell input{width:100%;min-width:140px;background:transparent;border:none;color:var(--text);padding:7px 10px;font-size:12px;font-family:'Noto Sans KR',sans-serif;outline:none}
+.memo-cell input:focus{background:rgba(59,130,246,.08);box-shadow:inset 0 0 0 1px var(--blue)}
+.memo-cell input::placeholder{color:var(--text3)}
 .listings-tbl tr:hover td{background:var(--surf2)}
 .col-toggle-btn{padding:3px 9px;border-radius:4px;border:1px solid var(--border);background:var(--surf2);color:var(--text3);font-size:11px;cursor:pointer;transition:all .15s;font-family:'Noto Sans KR',sans-serif}
 .col-toggle-btn.on{background:var(--blue);border-color:var(--blue);color:#fff}
@@ -2046,7 +2066,10 @@ const LISTINGS_COLS = [
   { key:'confirm_date',    label:'등록일', on:true },
   { key:'description',     label:'설명',   on:true },
   { key:'link',            label:'링크',   on:true },
+  { key:'note',            label:'메모',   on:true },
 ];
+
+let listingsFilters = {}; // { columnKey: '검색어' }
 
 async function initListingsTab() {
   renderColToggles();
@@ -2101,9 +2124,11 @@ function selectCxOption(num, name) {
 }
 
 async function onListingsCxChange(complexNumber) {
+  closeListingsFilterDropdown();
   listingsCurrentCx = complexNumber || null;
   listingsCurrentRunId = null;
   listingsArticles = [];
+  listingsFilters = {};
   document.getElementById('listingsRight').innerHTML = '<div class="listings-empty">수집일을 선택하세요</div>';
   if (!complexNumber) {
     document.getElementById('listingsLeft').innerHTML = '<div class="listings-empty">단지를 선택하세요</div>';
@@ -2154,6 +2179,8 @@ function renderListingsRuns() {
 }
 
 async function selectListingsRun(runId) {
+  closeListingsFilterDropdown();
+  listingsFilters = {};
   listingsCurrentRunId = runId;
   renderListingsRuns();
   const el = document.getElementById('listingsRight');
@@ -2183,9 +2210,19 @@ function renderListingsTable() {
   const cols = LISTINGS_COLS.filter(c => c.on);
   if (listingsArticles.length === 0) { el.innerHTML = '<div class="listings-empty">데이터 없음</div>'; return; }
 
+  // 필터링 (컬럼별 선택된 값 집합에 포함되는 행만)
+  const filtered = listingsArticles.filter(a => {
+    return Object.entries(listingsFilters).every(([key, set]) => {
+      if (!set) return true;
+      let raw = a[key];
+      if (raw === null || raw === undefined || raw === '') raw = '__EMPTY__';
+      return set.has(raw);
+    });
+  });
+
   // 정렬
   const numericKeys = new Set(['deal_price_num', 'exclusive_space']);
-  const sorted = [...listingsArticles].sort((a, b) => {
+  const sorted = [...filtered].sort((a, b) => {
     let va = a[listingsSortKey] ?? '';
     let vb = b[listingsSortKey] ?? '';
     if (numericKeys.has(listingsSortKey)) {
@@ -2196,16 +2233,33 @@ function renderListingsTable() {
     return String(va).localeCompare(String(vb), 'ko') * listingsSortDir;
   });
 
-  // 헤더
+  // 헤더 (정렬 라벨 + 컬럼별 값 목록 필터 버튼)
   const thead = '<tr>' + cols.map(c => {
     const isActive = listingsSortKey === c.key;
     const arrow = isActive ? (listingsSortDir === 1 ? '▲' : '▼') : '▲';
     const arrowClass = 'sort-arrow' + (isActive ? ' active' : '');
-    return `<th onclick="sortListingsBy('${c.key}')">${c.label}<span class="${arrowClass}">${arrow}</span></th>`;
+    const filterActive = !!listingsFilters[c.key];
+    return `<th>
+      <div class="th-row">
+        <span class="th-label" onclick="sortListingsBy('${c.key}')">${c.label}<span class="${arrowClass}">${arrow}</span></span>
+        <button type="button" class="col-filter-btn${filterActive ? ' active' : ''}" data-key="${c.key}"
+          onclick="event.stopPropagation(); onListingsFilterBtnClick(this, '${c.key}')">▾</button>
+      </div>
+    </th>`;
   }).join('') + '</tr>';
+
+  if (sorted.length === 0) {
+    el.innerHTML = '<table class="listings-tbl"><thead>' + thead + '</thead></table><div class="listings-empty">필터 결과가 없습니다</div>';
+    return;
+  }
 
   const tbody = sorted.map(a => {
     const cells = cols.map(c => {
+      if (c.key === 'note') {
+        const noteVal = (a.note ?? '').toString().replace(/"/g,'&quot;');
+        return `<td class="memo-cell"><input type="text" value="${noteVal}" placeholder="메모 입력..."
+          onchange="updateListingNote('${a.id}', this.value)" onclick="event.stopPropagation()"></td>`;
+      }
       let v = a[c.key] ?? '';
       if (c.key === 'link' && v) v = '<a href="' + v + '" target="_blank" style="color:var(--blue)">🔗 보기</a>';
       if (c.key === 'exclusive_space' && v !== '') v = v + 'm²';
@@ -2216,6 +2270,115 @@ function renderListingsTable() {
   }).join('');
 
   el.innerHTML = '<table class="listings-tbl"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
+}
+
+let listingsFilterDropdownEl = null;
+let listingsFilterDropdownKey = null;
+
+function closeListingsFilterDropdown() {
+  if (listingsFilterDropdownEl) { listingsFilterDropdownEl.remove(); listingsFilterDropdownEl = null; }
+  listingsFilterDropdownKey = null;
+  document.removeEventListener('mousedown', onListingsFilterOutsideClick, true);
+}
+
+function onListingsFilterOutsideClick(e) {
+  if (listingsFilterDropdownEl && !listingsFilterDropdownEl.contains(e.target)) closeListingsFilterDropdown();
+}
+
+function listingsUniqueValues(key) {
+  const map = new Map();
+  listingsArticles.forEach(a => {
+    let raw = a[key];
+    if (raw === null || raw === undefined || raw === '') raw = '__EMPTY__';
+    map.set(raw, (map.get(raw) || 0) + 1);
+  });
+  return [...map.entries()].sort((x, y) => {
+    if (x[0] === '__EMPTY__') return 1;
+    if (y[0] === '__EMPTY__') return -1;
+    return String(x[0]).localeCompare(String(y[0]), 'ko', { numeric: true });
+  });
+}
+
+function formatListingsFilterLabel(key, v) {
+  if (v === '__EMPTY__') return '(빈값)';
+  if (key === 'exclusive_space') return v + 'm²';
+  return String(v);
+}
+
+function onListingsFilterBtnClick(btnEl, key) {
+  if (listingsFilterDropdownKey === key) { closeListingsFilterDropdown(); return; }
+  closeListingsFilterDropdown();
+  listingsFilterDropdownKey = key;
+
+  const values = listingsUniqueValues(key);
+  const dd = document.createElement('div');
+  dd.className = 'col-filter-dropdown';
+
+  const actions = document.createElement('div');
+  actions.className = 'cf-actions';
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button'; allBtn.textContent = '전체 선택';
+  allBtn.onclick = () => { delete listingsFilters[key]; refreshList(); renderListingsTable(); };
+  const noneBtn = document.createElement('button');
+  noneBtn.type = 'button'; noneBtn.textContent = '전체 해제';
+  noneBtn.onclick = () => { listingsFilters[key] = new Set(); refreshList(); renderListingsTable(); };
+  actions.append(allBtn, noneBtn);
+
+  const list = document.createElement('div');
+  list.className = 'cf-list';
+
+  function refreshList() {
+    const curSet = listingsFilters[key];
+    list.innerHTML = '';
+    values.forEach(([v, count]) => {
+      const checked = !curSet || curSet.has(v);
+      const item = document.createElement('label');
+      item.className = 'cf-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = checked;
+      cb.addEventListener('change', () => {
+        let set = listingsFilters[key];
+        if (!set) { set = new Set(values.map(([vv]) => vv)); listingsFilters[key] = set; }
+        if (cb.checked) set.add(v); else set.delete(v);
+        if (set.size === values.length) delete listingsFilters[key];
+        renderListingsTable();
+      });
+      const span = document.createElement('span');
+      span.className = 'cf-label';
+      span.textContent = formatListingsFilterLabel(key, v);
+      const cnt = document.createElement('span');
+      cnt.className = 'cf-count';
+      cnt.textContent = String(count);
+      item.append(cb, span, cnt);
+      list.appendChild(item);
+    });
+  }
+  refreshList();
+
+  dd.append(actions, list);
+  document.body.appendChild(dd);
+  listingsFilterDropdownEl = dd;
+
+  const r = btnEl.getBoundingClientRect();
+  dd.style.top = (r.bottom + 4) + 'px';
+  const left = Math.min(r.left, window.innerWidth - 216);
+  dd.style.left = Math.max(8, left) + 'px';
+
+  setTimeout(() => document.addEventListener('mousedown', onListingsFilterOutsideClick, true), 0);
+}
+
+async function updateListingNote(id, value) {
+  const note = value.trim() || null;
+  const a = listingsArticles.find(x => x.id === id);
+  const prev = a ? a.note : undefined;
+  if (a) a.note = note;
+  const { error } = await sb.from('apt_listings').update({ note }).eq('id', id);
+  if (error) {
+    if (a) a.note = prev;
+    alert('메모 저장 실패: ' + error.message);
+    renderListingsTable();
+  }
 }
 
 function toggleListingsCol(key) {
