@@ -2443,14 +2443,15 @@ function renderColToggles() {
 // ══════════════════════════════════════════
 
 // 동일 매물 추정 키: article_number는 매번 바뀔 수 있어 사용하지 않고
-// 거래유형+동+층+면적+방향 조합으로 같은 물건인지 추정한다.
+// 거래유형+동+층+향+설명 조합으로 같은 물건인지 추정한다.
+// (면적은 회차별로 표기가 미세하게 달라져 같은 매물도 다른 그룹으로 갈리는 경우가 있어 제외)
 function listingMatchKey(a) {
   return [
     a.trade_type ?? '',
     a.dong_name ?? '',
     a.floor_info ?? '',
-    a.exclusive_space ?? '',
     a.direction ?? '',
+    a.description ?? '',
   ].join('|');
 }
 
