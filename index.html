@@ -370,6 +370,13 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 .col-toggle-btn{padding:3px 9px;border-radius:4px;border:1px solid var(--border);background:var(--surf2);color:var(--text3);font-size:11px;cursor:pointer;transition:all .15s;font-family:'Noto Sans KR',sans-serif}
 .col-toggle-btn.on{background:var(--blue);border-color:var(--blue);color:#fff}
 .listings-empty{padding:60px 20px;text-align:center;color:var(--text3);font-size:13px}
+#compareBtn.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.cmp-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;white-space:nowrap}
+.cmp-added{background:rgba(16,185,129,.15);color:var(--green)}
+.cmp-removed{background:rgba(239,68,68,.15);color:var(--red)}
+.cmp-changed{background:rgba(245,158,11,.15);color:var(--amber)}
+tr.cmp-row-removed td{opacity:.55;text-decoration:line-through}
+tr.cmp-row-removed td.memo-cell,tr.cmp-row-removed td:has(a){text-decoration:none}
 .cx-combobox{position:relative;width:220px;flex-shrink:0}
 .cx-input{width:100%;padding:6px 10px;background:var(--surf2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none;font-family:'Noto Sans KR',sans-serif;box-sizing:border-box}
 .cx-input:focus{border-color:var(--blue)}
@@ -465,7 +472,7 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
       <span style="font-size:11px;color:var(--text3);white-space:nowrap">컬럼:</span>
       <div id="colToggles" style="display:flex;gap:4px;flex-wrap:wrap"></div>
       <div style="margin-left:auto"></div>
-      <button class="btn btn-outline" id="compareBtn" style="font-size:11px" onclick="openCompareModal()" disabled>📊 이전 회차와 비교</button>
+      <button class="btn btn-outline" id="compareBtn" style="font-size:11px" onclick="toggleCompareMode()" disabled>📊 이전 회차와 비교</button>
     </div>
     <!-- 바디 -->
     <div class="listings-body">
@@ -628,20 +635,6 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
     <div class="form-footer">
       <button class="btn btn-outline" onclick="closeModal('settingsModal')">취소</button>
       <button class="btn btn-primary" onclick="saveSettings()">저장</button>
-    </div>
-  </div>
-</div>
-
-<!-- 매물 변동 비교 모달 -->
-<div class="modal-bg" id="compareModal">
-  <div class="modal" style="width:760px;max-height:85vh">
-    <div class="modal-title">
-      <span>📊 매물 변동 비교</span>
-      <button class="modal-close" onclick="closeModal('compareModal')">×</button>
-    </div>
-    <div id="compareContent"></div>
-    <div class="form-footer">
-      <button class="btn btn-outline" onclick="closeModal('compareModal')">닫기</button>
     </div>
   </div>
 </div>
@@ -2070,6 +2063,10 @@ let listingsRunList = [];        // 선택된 단지의 수집일 목록
 let listingsCurrentRunId = null; // 선택된 run id
 let listingsPrevRunId = null;    // 비교 대상(직전 회차) run id
 let listingsArticles = [];
+let listingsCompareMode = false;     // 변동 비교 표시 여부
+let listingsComparePrevList = null;  // 직전 회차 매물 캐시
+let listingsComparePrevRunId = null; // listingsComparePrevList가 어느 run인지
+let listingsCompareDisplay = null;   // 비교 모드용 병합 표시 목록
 let listingsSortKey = 'deal_price_num';
 let listingsSortDir = 1; // 1=오름차순, -1=내림차순
 
@@ -2149,7 +2146,7 @@ async function onListingsCxChange(complexNumber) {
   listingsArticles = [];
   listingsFilters = {};
   document.getElementById('listingsRight').innerHTML = '<div class="listings-empty">수집일을 선택하세요</div>';
-  document.getElementById('compareBtn').disabled = true;
+  resetCompareMode();
   if (!complexNumber) {
     document.getElementById('listingsLeft').innerHTML = '<div class="listings-empty">단지를 선택하세요</div>';
     return;
@@ -2212,12 +2209,13 @@ async function selectListingsRun(runId) {
     .order('deal_price_num', { ascending: true, nullsFirst: false });
   if (error) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + error.message + '</div>'; return; }
   listingsArticles = data || [];
-  renderListingsTable();
 
   const idx = listingsRunList.findIndex(r => r.id === runId);
   listingsPrevRunId = (idx >= 0 && idx + 1 < listingsRunList.length) ? listingsRunList[idx + 1].id : null;
-  const compareBtn = document.getElementById('compareBtn');
-  if (compareBtn) compareBtn.disabled = !listingsPrevRunId;
+  resetCompareMode();
+  document.getElementById('compareBtn').disabled = !listingsPrevRunId;
+
+  renderListingsTable();
 }
 
 function sortListingsBy(key) {
@@ -2233,10 +2231,11 @@ function sortListingsBy(key) {
 function renderListingsTable() {
   const el = document.getElementById('listingsRight');
   const cols = LISTINGS_COLS.filter(c => c.on);
-  if (listingsArticles.length === 0) { el.innerHTML = '<div class="listings-empty">데이터 없음</div>'; return; }
+  const sourceList = (listingsCompareMode && listingsCompareDisplay) ? listingsCompareDisplay : listingsArticles;
+  if (sourceList.length === 0) { el.innerHTML = '<div class="listings-empty">데이터 없음</div>'; return; }
 
   // 필터링 (컬럼별 선택된 값 집합에 포함되는 행만)
-  const filtered = listingsArticles.filter(a => {
+  const filtered = sourceList.filter(a => {
     return Object.entries(listingsFilters).every(([key, set]) => {
       if (!set) return true;
       let raw = a[key];
@@ -2259,7 +2258,8 @@ function renderListingsTable() {
   });
 
   // 헤더 (정렬 라벨 + 컬럼별 값 목록 필터 버튼)
-  const thead = '<tr>' + cols.map(c => {
+  const cmpTh = listingsCompareMode ? '<th style="width:64px">변동</th>' : '';
+  const thead = '<tr>' + cmpTh + cols.map(c => {
     const isActive = listingsSortKey === c.key;
     const arrow = isActive ? (listingsSortDir === 1 ? '▲' : '▼') : '▲';
     const arrowClass = 'sort-arrow' + (isActive ? ' active' : '');
@@ -2279,6 +2279,8 @@ function renderListingsTable() {
   }
 
   const tbody = sorted.map(a => {
+    const cmpTd = listingsCompareMode ? '<td>' + cmpBadge(a) + '</td>' : '';
+    const rowClass = a._cmpStatus === 'removed' ? ' class="cmp-row-removed"' : '';
     const cells = cols.map(c => {
       if (c.key === 'note') {
         const noteVal = (a.note ?? '').toString().replace(/"/g,'&quot;');
@@ -2286,15 +2288,30 @@ function renderListingsTable() {
           onchange="updateListingNote('${a.id}', this.value)" onclick="event.stopPropagation()"></td>`;
       }
       let v = a[c.key] ?? '';
+      if (c.key === 'deal_price' && a._cmpStatus === 'changed' && a._cmpPrevPrice != null) {
+        const safePrev = String(a._cmpPrevPrice).replace(/</g,'&lt;');
+        const safeCur = String(v).replace(/</g,'&lt;');
+        return `<td>${safePrev} → <b>${safeCur}</b></td>`;
+      }
       if (c.key === 'link' && v) v = '<a href="' + v + '" target="_blank" style="color:var(--blue)">🔗 보기</a>';
       if (c.key === 'exclusive_space' && v !== '') v = v + 'm²';
       const safe = typeof v === 'string' ? v.replace(/</g,'&lt;') : v;
       return '<td>' + (c.key === 'link' ? v : safe) + '</td>';
     }).join('');
-    return '<tr>' + cells + '</tr>';
+    return `<tr${rowClass}>` + cmpTd + cells + '</tr>';
   }).join('');
 
   el.innerHTML = '<table class="listings-tbl"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
+}
+
+// 변동 상태 배지 (🆕 신규 / ❌ 삭제 / 💰 가격변동)
+function cmpBadge(a) {
+  switch (a._cmpStatus) {
+    case 'added':   return '<span class="cmp-badge cmp-added">🆕 신규</span>';
+    case 'removed': return '<span class="cmp-badge cmp-removed">❌ 삭제</span>';
+    case 'changed': return '<span class="cmp-badge cmp-changed">💰 가격변동</span>';
+    default: return '';
+  }
 }
 
 let listingsFilterDropdownEl = null;
@@ -2480,88 +2497,58 @@ function compareRuns(prevList, curList) {
   return { added, removed, changed, unchanged };
 }
 
-function clEsc(v) {
-  return (v ?? '').toString().replace(/</g, '&lt;');
+// 현재 목록 + 직전 회차 비교 결과를 한 테이블에서 보여줄 병합 목록 생성
+// (신규/가격변동은 현재 행에 표시, 삭제는 직전 회차 행을 그대로 추가)
+function buildCompareDisplayList(curList, prevList) {
+  const { added, removed, changed } = compareRuns(prevList, curList);
+  const addedIds = new Set(added.map(a => a.id));
+  const changedMap = new Map(changed.map(({ prev, cur }) => [cur.id, prev.deal_price]));
+
+  const display = curList.map(a => {
+    const copy = { ...a, _cmpStatus: 'unchanged', _cmpPrevPrice: null };
+    if (addedIds.has(a.id)) copy._cmpStatus = 'added';
+    else if (changedMap.has(a.id)) { copy._cmpStatus = 'changed'; copy._cmpPrevPrice = changedMap.get(a.id); }
+    return copy;
+  });
+  removed.forEach(p => display.push({ ...p, _cmpStatus: 'removed', _cmpPrevPrice: null }));
+  return display;
 }
 
-function clRow(a) {
-  const space = a.exclusive_space != null ? a.exclusive_space + 'm²' : '';
-  return `<tr>
-    <td>${clEsc(a.dong_name)}</td>
-    <td>${clEsc(a.floor_info)}</td>
-    <td>${clEsc(space)}</td>
-    <td>${clEsc(a.direction)}</td>
-    <td>${clEsc(a.deal_price)}</td>
-    <td style="white-space:normal;font-size:11px;color:var(--text2)">${clEsc(a.description)}</td>
-  </tr>`;
+function resetCompareMode() {
+  listingsCompareMode = false;
+  listingsCompareDisplay = null;
+  const btn = document.getElementById('compareBtn');
+  if (btn) { btn.classList.remove('active'); btn.disabled = !listingsPrevRunId; }
 }
 
-function clChangedRow({ prev, cur }) {
-  const space = cur.exclusive_space != null ? cur.exclusive_space + 'm²' : '';
-  return `<tr>
-    <td>${clEsc(cur.dong_name)}</td>
-    <td>${clEsc(cur.floor_info)}</td>
-    <td>${clEsc(space)}</td>
-    <td>${clEsc(cur.direction)}</td>
-    <td>${clEsc(prev.deal_price)} → <b>${clEsc(cur.deal_price)}</b></td>
-    <td style="white-space:normal;font-size:11px;color:var(--text2)">${clEsc(cur.description)}</td>
-  </tr>`;
-}
-
-function clTable(rows, rowFn, emptyMsg) {
-  if (rows.length === 0) return `<div class="listings-empty" style="padding:16px">${emptyMsg}</div>`;
-  return `<table class="tbl"><thead><tr>
-    <th>동</th><th>층</th><th>면적</th><th>향</th><th>가격</th><th>설명</th>
-  </tr></thead><tbody>${rows.map(rowFn).join('')}</tbody></table>`;
-}
-
-async function openCompareModal() {
+async function toggleCompareMode() {
   if (!listingsCurrentCx || !listingsCurrentRunId || !listingsPrevRunId) return;
+  const btn = document.getElementById('compareBtn');
 
-  const content = document.getElementById('compareContent');
-  content.innerHTML = '<div class="loading" style="padding:20px;text-align:center">비교 중...</div>';
-  document.getElementById('compareModal').classList.add('open');
-
-  const { data: prevData, error } = await sb.from('apt_listings')
-    .select('*')
-    .eq('run_id', listingsPrevRunId)
-    .eq('complex_number', listingsCurrentCx);
-  if (error) {
-    content.innerHTML = `<div class="listings-empty" style="color:var(--red)">오류: ${error.message}</div>`;
+  if (listingsCompareMode) {
+    listingsCompareMode = false;
+    listingsCompareDisplay = null;
+    btn.classList.remove('active');
+    renderListingsTable();
     return;
   }
 
-  const prevList = prevData || [];
-  const curList = listingsArticles;
-  const { added, removed, changed } = compareRuns(prevList, curList);
+  if (listingsComparePrevRunId !== listingsPrevRunId) {
+    btn.disabled = true;
+    const { data, error } = await sb.from('apt_listings')
+      .select('*')
+      .eq('run_id', listingsPrevRunId)
+      .eq('complex_number', listingsCurrentCx);
+    btn.disabled = false;
+    if (error) { toast('비교 데이터 로드 실패: ' + error.message, 'err'); return; }
+    listingsComparePrevList = data || [];
+    listingsComparePrevRunId = listingsPrevRunId;
+  }
 
-  const curRun = listingsRunList.find(r => r.id === listingsCurrentRunId);
-  const prevRun = listingsRunList.find(r => r.id === listingsPrevRunId);
-  const fmtDt = iso => new Date(iso).toLocaleString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-  const diff = curList.length - prevList.length;
-  const diffStr = diff > 0 ? `+${diff}` : `${diff}`;
-
-  content.innerHTML = `
-    <div style="margin-bottom:14px;font-size:13px;color:var(--text2)">
-      ${fmtDt(prevRun.run_at)} (${prevList.length}건) → ${fmtDt(curRun.run_at)} (${curList.length}건)
-      <b style="color:${diff > 0 ? 'var(--red)' : diff < 0 ? 'var(--blue)' : 'var(--text3)'}">  순증감 ${diffStr}건</b>
-    </div>
-    <div class="sec" style="margin-bottom:10px">
-      <div class="sec-title"><div class="sec-title-l">신규 매물 (${added.length}건)</div></div>
-      ${clTable(added, clRow, '신규 매물 없음')}
-    </div>
-    <div class="sec" style="margin-bottom:10px">
-      <div class="sec-title"><div class="sec-title-l">삭제된 매물 (${removed.length}건)</div></div>
-      ${clTable(removed, clRow, '삭제된 매물 없음')}
-    </div>
-    <div class="sec">
-      <div class="sec-title"><div class="sec-title-l">가격 변동 (동일 매물 추정, ${changed.length}건)</div></div>
-      ${clTable(changed, clChangedRow, '가격 변동 없음')}
-    </div>
-    <div style="margin-top:10px;font-size:11px;color:var(--text3)">
-      ※ 매물 ID는 회차마다 바뀔 수 있어, 동/층/면적/방향이 동일한 매물을 같은 매물로 간주해 비교했습니다.
-    </div>
-  `;
+  listingsCompareDisplay = buildCompareDisplayList(listingsArticles, listingsComparePrevList);
+  listingsCompareMode = true;
+  btn.classList.add('active');
+  renderListingsTable();
 }
 </script>
 </body>
