@@ -464,6 +464,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
       <div style="height:20px;width:1px;background:var(--border);margin:0 4px"></div>
       <span style="font-size:11px;color:var(--text3);white-space:nowrap">컬럼:</span>
       <div id="colToggles" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+      <div style="margin-left:auto"></div>
+      <button class="btn btn-outline" id="compareBtn" style="font-size:11px" onclick="openCompareModal()" disabled>📊 이전 회차와 비교</button>
     </div>
     <!-- 바디 -->
     <div class="listings-body">
@@ -626,6 +628,20 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
     <div class="form-footer">
       <button class="btn btn-outline" onclick="closeModal('settingsModal')">취소</button>
       <button class="btn btn-primary" onclick="saveSettings()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 매물 변동 비교 모달 -->
+<div class="modal-bg" id="compareModal">
+  <div class="modal" style="width:760px;max-height:85vh">
+    <div class="modal-title">
+      <span>📊 매물 변동 비교</span>
+      <button class="modal-close" onclick="closeModal('compareModal')">×</button>
+    </div>
+    <div id="compareContent"></div>
+    <div class="form-footer">
+      <button class="btn btn-outline" onclick="closeModal('compareModal')">닫기</button>
     </div>
   </div>
 </div>
@@ -2051,6 +2067,7 @@ let listingsAllComplexes = [];   // [{num, name}] 전체 목록
 let listingsCurrentCx = null;   // 선택된 complex_number
 let listingsRunList = [];        // 선택된 단지의 수집일 목록
 let listingsCurrentRunId = null; // 선택된 run id
+let listingsPrevRunId = null;    // 비교 대상(직전 회차) run id
 let listingsArticles = [];
 let listingsSortKey = 'deal_price_num';
 let listingsSortDir = 1; // 1=오름차순, -1=내림차순
@@ -2127,9 +2144,11 @@ async function onListingsCxChange(complexNumber) {
   closeListingsFilterDropdown();
   listingsCurrentCx = complexNumber || null;
   listingsCurrentRunId = null;
+  listingsPrevRunId = null;
   listingsArticles = [];
   listingsFilters = {};
   document.getElementById('listingsRight').innerHTML = '<div class="listings-empty">수집일을 선택하세요</div>';
+  document.getElementById('compareBtn').disabled = true;
   if (!complexNumber) {
     document.getElementById('listingsLeft').innerHTML = '<div class="listings-empty">단지를 선택하세요</div>';
     return;
@@ -2193,6 +2212,11 @@ async function selectListingsRun(runId) {
   if (error) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + error.message + '</div>'; return; }
   listingsArticles = data || [];
   renderListingsTable();
+
+  const idx = listingsRunList.findIndex(r => r.id === runId);
+  listingsPrevRunId = (idx >= 0 && idx + 1 < listingsRunList.length) ? listingsRunList[idx + 1].id : null;
+  const compareBtn = document.getElementById('compareBtn');
+  if (compareBtn) compareBtn.disabled = !listingsPrevRunId;
 }
 
 function sortListingsBy(key) {
@@ -2394,6 +2418,149 @@ function renderColToggles() {
   el.innerHTML = LISTINGS_COLS.map(c =>
     '<button class="col-toggle-btn' + (c.on ? ' on' : '') + '" onclick="toggleListingsCol(\'' + c.key + '\')">' + c.label + '</button>'
   ).join('');
+}
+
+// ══════════════════════════════════════════
+//  매물 변동 비교 (이전 회차 vs 현재 회차)
+// ══════════════════════════════════════════
+
+// 동일 매물 추정 키: article_number는 매번 바뀔 수 있어 사용하지 않고
+// 거래유형+동+층+면적+방향 조합으로 같은 물건인지 추정한다.
+function listingMatchKey(a) {
+  return [
+    a.trade_type ?? '',
+    a.dong_name ?? '',
+    a.floor_info ?? '',
+    a.exclusive_space ?? '',
+    a.direction ?? '',
+  ].join('|');
+}
+
+function groupListingsByKey(list) {
+  const map = new Map();
+  list.forEach(a => {
+    const k = listingMatchKey(a);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(a);
+  });
+  // 그룹 내부는 가격순 정렬 (null은 뒤로)
+  map.forEach(arr => arr.sort((x, y) => {
+    const px = x.deal_price_num ?? Infinity;
+    const py = y.deal_price_num ?? Infinity;
+    return px - py;
+  }));
+  return map;
+}
+
+// 동/층/면적/방향이 같은 매물끼리 짝지어 added/removed/changed/unchanged로 분류
+function compareRuns(prevList, curList) {
+  const prevGroups = groupListingsByKey(prevList);
+  const curGroups = groupListingsByKey(curList);
+  const allKeys = new Set([...prevGroups.keys(), ...curGroups.keys()]);
+
+  const added = [], removed = [], changed = [], unchanged = [];
+
+  allKeys.forEach(key => {
+    const prevArr = prevGroups.get(key) || [];
+    const curArr = curGroups.get(key) || [];
+    const n = Math.min(prevArr.length, curArr.length);
+    for (let i = 0; i < n; i++) {
+      const p = prevArr[i], c = curArr[i];
+      if ((p.deal_price_num ?? null) !== (c.deal_price_num ?? null)) {
+        changed.push({ prev: p, cur: c });
+      } else {
+        unchanged.push({ prev: p, cur: c });
+      }
+    }
+    for (let i = n; i < prevArr.length; i++) removed.push(prevArr[i]);
+    for (let i = n; i < curArr.length; i++) added.push(curArr[i]);
+  });
+
+  return { added, removed, changed, unchanged };
+}
+
+function clEsc(v) {
+  return (v ?? '').toString().replace(/</g, '&lt;');
+}
+
+function clRow(a) {
+  const space = a.exclusive_space != null ? a.exclusive_space + 'm²' : '';
+  return `<tr>
+    <td>${clEsc(a.dong_name)}</td>
+    <td>${clEsc(a.floor_info)}</td>
+    <td>${clEsc(space)}</td>
+    <td>${clEsc(a.direction)}</td>
+    <td>${clEsc(a.deal_price)}</td>
+    <td style="white-space:normal;font-size:11px;color:var(--text2)">${clEsc(a.description)}</td>
+  </tr>`;
+}
+
+function clChangedRow({ prev, cur }) {
+  const space = cur.exclusive_space != null ? cur.exclusive_space + 'm²' : '';
+  return `<tr>
+    <td>${clEsc(cur.dong_name)}</td>
+    <td>${clEsc(cur.floor_info)}</td>
+    <td>${clEsc(space)}</td>
+    <td>${clEsc(cur.direction)}</td>
+    <td>${clEsc(prev.deal_price)} → <b>${clEsc(cur.deal_price)}</b></td>
+    <td style="white-space:normal;font-size:11px;color:var(--text2)">${clEsc(cur.description)}</td>
+  </tr>`;
+}
+
+function clTable(rows, rowFn, emptyMsg) {
+  if (rows.length === 0) return `<div class="listings-empty" style="padding:16px">${emptyMsg}</div>`;
+  return `<table class="tbl"><thead><tr>
+    <th>동</th><th>층</th><th>면적</th><th>향</th><th>가격</th><th>설명</th>
+  </tr></thead><tbody>${rows.map(rowFn).join('')}</tbody></table>`;
+}
+
+async function openCompareModal() {
+  if (!listingsCurrentCx || !listingsCurrentRunId || !listingsPrevRunId) return;
+
+  const content = document.getElementById('compareContent');
+  content.innerHTML = '<div class="loading" style="padding:20px;text-align:center">비교 중...</div>';
+  document.getElementById('compareModal').classList.add('open');
+
+  const { data: prevData, error } = await sb.from('apt_listings')
+    .select('*')
+    .eq('run_id', listingsPrevRunId)
+    .eq('complex_number', listingsCurrentCx);
+  if (error) {
+    content.innerHTML = `<div class="listings-empty" style="color:var(--red)">오류: ${error.message}</div>`;
+    return;
+  }
+
+  const prevList = prevData || [];
+  const curList = listingsArticles;
+  const { added, removed, changed } = compareRuns(prevList, curList);
+
+  const curRun = listingsRunList.find(r => r.id === listingsCurrentRunId);
+  const prevRun = listingsRunList.find(r => r.id === listingsPrevRunId);
+  const fmtDt = iso => new Date(iso).toLocaleString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  const diff = curList.length - prevList.length;
+  const diffStr = diff > 0 ? `+${diff}` : `${diff}`;
+
+  content.innerHTML = `
+    <div style="margin-bottom:14px;font-size:13px;color:var(--text2)">
+      ${fmtDt(prevRun.run_at)} (${prevList.length}건) → ${fmtDt(curRun.run_at)} (${curList.length}건)
+      <b style="color:${diff > 0 ? 'var(--red)' : diff < 0 ? 'var(--blue)' : 'var(--text3)'}">  순증감 ${diffStr}건</b>
+    </div>
+    <div class="sec" style="margin-bottom:10px">
+      <div class="sec-title"><div class="sec-title-l">신규 매물 (${added.length}건)</div></div>
+      ${clTable(added, clRow, '신규 매물 없음')}
+    </div>
+    <div class="sec" style="margin-bottom:10px">
+      <div class="sec-title"><div class="sec-title-l">삭제된 매물 (${removed.length}건)</div></div>
+      ${clTable(removed, clRow, '삭제된 매물 없음')}
+    </div>
+    <div class="sec">
+      <div class="sec-title"><div class="sec-title-l">가격 변동 (동일 매물 추정, ${changed.length}건)</div></div>
+      ${clTable(changed, clChangedRow, '가격 변동 없음')}
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--text3)">
+      ※ 매물 ID는 회차마다 바뀔 수 있어, 동/층/면적/방향이 동일한 매물을 같은 매물로 간주해 비교했습니다.
+    </div>
+  `;
 }
 </script>
 </body>
