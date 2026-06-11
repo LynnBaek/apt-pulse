@@ -370,13 +370,6 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 .col-toggle-btn{padding:3px 9px;border-radius:4px;border:1px solid var(--border);background:var(--surf2);color:var(--text3);font-size:11px;cursor:pointer;transition:all .15s;font-family:'Noto Sans KR',sans-serif}
 .col-toggle-btn.on{background:var(--blue);border-color:var(--blue);color:#fff}
 .listings-empty{padding:60px 20px;text-align:center;color:var(--text3);font-size:13px}
-#compareBtn.active{background:var(--blue);border-color:var(--blue);color:#fff}
-.cmp-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;white-space:nowrap}
-.cmp-added{background:rgba(16,185,129,.15);color:var(--green)}
-.cmp-removed{background:rgba(239,68,68,.15);color:var(--red)}
-.cmp-changed{background:rgba(245,158,11,.15);color:var(--amber)}
-tr.cmp-row-removed td{opacity:.55;text-decoration:line-through}
-tr.cmp-row-removed td.memo-cell,tr.cmp-row-removed td:has(a){text-decoration:none}
 .cx-combobox{position:relative;width:220px;flex-shrink:0}
 .cx-input{width:100%;padding:6px 10px;background:var(--surf2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none;font-family:'Noto Sans KR',sans-serif;box-sizing:border-box}
 .cx-input:focus{border-color:var(--blue)}
@@ -471,8 +464,6 @@ tr.cmp-row-removed td.memo-cell,tr.cmp-row-removed td:has(a){text-decoration:non
       <div style="height:20px;width:1px;background:var(--border);margin:0 4px"></div>
       <span style="font-size:11px;color:var(--text3);white-space:nowrap">컬럼:</span>
       <div id="colToggles" style="display:flex;gap:4px;flex-wrap:wrap"></div>
-      <div style="margin-left:auto"></div>
-      <button class="btn btn-outline" id="compareBtn" style="font-size:11px" onclick="toggleCompareMode()" disabled>📊 이전 회차와 비교</button>
     </div>
     <!-- 바디 -->
     <div class="listings-body">
@@ -2061,12 +2052,7 @@ let listingsAllComplexes = [];   // [{num, name}] 전체 목록
 let listingsCurrentCx = null;   // 선택된 complex_number
 let listingsRunList = [];        // 선택된 단지의 수집일 목록
 let listingsCurrentRunId = null; // 선택된 run id
-let listingsPrevRunId = null;    // 비교 대상(직전 회차) run id
 let listingsArticles = [];
-let listingsCompareMode = false;     // 변동 비교 표시 여부
-let listingsComparePrevList = null;  // 직전 회차 매물 캐시
-let listingsComparePrevRunId = null; // listingsComparePrevList가 어느 run인지
-let listingsCompareDisplay = null;   // 비교 모드용 병합 표시 목록
 let listingsSortKey = 'deal_price_num';
 let listingsSortDir = 1; // 1=오름차순, -1=내림차순
 
@@ -2142,11 +2128,9 @@ async function onListingsCxChange(complexNumber) {
   closeListingsFilterDropdown();
   listingsCurrentCx = complexNumber || null;
   listingsCurrentRunId = null;
-  listingsPrevRunId = null;
   listingsArticles = [];
   listingsFilters = {};
   document.getElementById('listingsRight').innerHTML = '<div class="listings-empty">수집일을 선택하세요</div>';
-  resetCompareMode();
   if (!complexNumber) {
     document.getElementById('listingsLeft').innerHTML = '<div class="listings-empty">단지를 선택하세요</div>';
     return;
@@ -2209,12 +2193,6 @@ async function selectListingsRun(runId) {
     .order('deal_price_num', { ascending: true, nullsFirst: false });
   if (error) { el.innerHTML = '<div class="listings-empty" style="color:var(--red)">오류: ' + error.message + '</div>'; return; }
   listingsArticles = data || [];
-
-  const idx = listingsRunList.findIndex(r => r.id === runId);
-  listingsPrevRunId = (idx >= 0 && idx + 1 < listingsRunList.length) ? listingsRunList[idx + 1].id : null;
-  resetCompareMode();
-  document.getElementById('compareBtn').disabled = !listingsPrevRunId;
-
   renderListingsTable();
 }
 
@@ -2231,11 +2209,10 @@ function sortListingsBy(key) {
 function renderListingsTable() {
   const el = document.getElementById('listingsRight');
   const cols = LISTINGS_COLS.filter(c => c.on);
-  const sourceList = (listingsCompareMode && listingsCompareDisplay) ? listingsCompareDisplay : listingsArticles;
-  if (sourceList.length === 0) { el.innerHTML = '<div class="listings-empty">데이터 없음</div>'; return; }
+  if (listingsArticles.length === 0) { el.innerHTML = '<div class="listings-empty">데이터 없음</div>'; return; }
 
   // 필터링 (컬럼별 선택된 값 집합에 포함되는 행만)
-  const filtered = sourceList.filter(a => {
+  const filtered = listingsArticles.filter(a => {
     return Object.entries(listingsFilters).every(([key, set]) => {
       if (!set) return true;
       let raw = a[key];
@@ -2258,8 +2235,7 @@ function renderListingsTable() {
   });
 
   // 헤더 (정렬 라벨 + 컬럼별 값 목록 필터 버튼)
-  const cmpTh = listingsCompareMode ? '<th style="width:64px">변동</th>' : '';
-  const thead = '<tr>' + cmpTh + cols.map(c => {
+  const thead = '<tr>' + cols.map(c => {
     const isActive = listingsSortKey === c.key;
     const arrow = isActive ? (listingsSortDir === 1 ? '▲' : '▼') : '▲';
     const arrowClass = 'sort-arrow' + (isActive ? ' active' : '');
@@ -2279,8 +2255,6 @@ function renderListingsTable() {
   }
 
   const tbody = sorted.map(a => {
-    const cmpTd = listingsCompareMode ? '<td>' + cmpBadge(a) + '</td>' : '';
-    const rowClass = a._cmpStatus === 'removed' ? ' class="cmp-row-removed"' : '';
     const cells = cols.map(c => {
       if (c.key === 'note') {
         const noteVal = (a.note ?? '').toString().replace(/"/g,'&quot;');
@@ -2288,30 +2262,15 @@ function renderListingsTable() {
           onchange="updateListingNote('${a.id}', this.value)" onclick="event.stopPropagation()"></td>`;
       }
       let v = a[c.key] ?? '';
-      if (c.key === 'deal_price' && a._cmpStatus === 'changed' && a._cmpPrevPrice != null) {
-        const safePrev = String(a._cmpPrevPrice).replace(/</g,'&lt;');
-        const safeCur = String(v).replace(/</g,'&lt;');
-        return `<td>${safePrev} → <b>${safeCur}</b></td>`;
-      }
       if (c.key === 'link' && v) v = '<a href="' + v + '" target="_blank" style="color:var(--blue)">🔗 보기</a>';
       if (c.key === 'exclusive_space' && v !== '') v = v + 'm²';
       const safe = typeof v === 'string' ? v.replace(/</g,'&lt;') : v;
       return '<td>' + (c.key === 'link' ? v : safe) + '</td>';
     }).join('');
-    return `<tr${rowClass}>` + cmpTd + cells + '</tr>';
+    return '<tr>' + cells + '</tr>';
   }).join('');
 
   el.innerHTML = '<table class="listings-tbl"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
-}
-
-// 변동 상태 배지 (🆕 신규 / ❌ 삭제 / 💰 가격변동)
-function cmpBadge(a) {
-  switch (a._cmpStatus) {
-    case 'added':   return '<span class="cmp-badge cmp-added">🆕 신규</span>';
-    case 'removed': return '<span class="cmp-badge cmp-removed">❌ 삭제</span>';
-    case 'changed': return '<span class="cmp-badge cmp-changed">💰 가격변동</span>';
-    default: return '';
-  }
 }
 
 let listingsFilterDropdownEl = null;
@@ -2436,120 +2395,6 @@ function renderColToggles() {
   el.innerHTML = LISTINGS_COLS.map(c =>
     '<button class="col-toggle-btn' + (c.on ? ' on' : '') + '" onclick="toggleListingsCol(\'' + c.key + '\')">' + c.label + '</button>'
   ).join('');
-}
-
-// ══════════════════════════════════════════
-//  매물 변동 비교 (이전 회차 vs 현재 회차)
-// ══════════════════════════════════════════
-
-// 동일 매물 추정 키: article_number는 매번 바뀔 수 있어 사용하지 않고
-// 거래유형+동+층+향+설명 조합으로 같은 물건인지 추정한다.
-// (면적은 회차별로 표기가 미세하게 달라져 같은 매물도 다른 그룹으로 갈리는 경우가 있어 제외)
-function listingMatchKey(a) {
-  return [
-    a.trade_type ?? '',
-    a.dong_name ?? '',
-    a.floor_info ?? '',
-    a.direction ?? '',
-    a.description ?? '',
-  ].join('|');
-}
-
-function groupListingsByKey(list) {
-  const map = new Map();
-  list.forEach(a => {
-    const k = listingMatchKey(a);
-    if (!map.has(k)) map.set(k, []);
-    map.get(k).push(a);
-  });
-  // 그룹 내부는 가격순 정렬 (null은 뒤로)
-  map.forEach(arr => arr.sort((x, y) => {
-    const px = x.deal_price_num ?? Infinity;
-    const py = y.deal_price_num ?? Infinity;
-    return px - py;
-  }));
-  return map;
-}
-
-// 동/층/면적/방향이 같은 매물끼리 짝지어 added/removed/changed/unchanged로 분류
-function compareRuns(prevList, curList) {
-  const prevGroups = groupListingsByKey(prevList);
-  const curGroups = groupListingsByKey(curList);
-  const allKeys = new Set([...prevGroups.keys(), ...curGroups.keys()]);
-
-  const added = [], removed = [], changed = [], unchanged = [];
-
-  allKeys.forEach(key => {
-    const prevArr = prevGroups.get(key) || [];
-    const curArr = curGroups.get(key) || [];
-    const n = Math.min(prevArr.length, curArr.length);
-    for (let i = 0; i < n; i++) {
-      const p = prevArr[i], c = curArr[i];
-      if ((p.deal_price_num ?? null) !== (c.deal_price_num ?? null)) {
-        changed.push({ prev: p, cur: c });
-      } else {
-        unchanged.push({ prev: p, cur: c });
-      }
-    }
-    for (let i = n; i < prevArr.length; i++) removed.push(prevArr[i]);
-    for (let i = n; i < curArr.length; i++) added.push(curArr[i]);
-  });
-
-  return { added, removed, changed, unchanged };
-}
-
-// 현재 목록 + 직전 회차 비교 결과를 한 테이블에서 보여줄 병합 목록 생성
-// (신규/가격변동은 현재 행에 표시, 삭제는 직전 회차 행을 그대로 추가)
-function buildCompareDisplayList(curList, prevList) {
-  const { added, removed, changed } = compareRuns(prevList, curList);
-  const addedIds = new Set(added.map(a => a.id));
-  const changedMap = new Map(changed.map(({ prev, cur }) => [cur.id, prev.deal_price]));
-
-  const display = curList.map(a => {
-    const copy = { ...a, _cmpStatus: 'unchanged', _cmpPrevPrice: null };
-    if (addedIds.has(a.id)) copy._cmpStatus = 'added';
-    else if (changedMap.has(a.id)) { copy._cmpStatus = 'changed'; copy._cmpPrevPrice = changedMap.get(a.id); }
-    return copy;
-  });
-  removed.forEach(p => display.push({ ...p, _cmpStatus: 'removed', _cmpPrevPrice: null }));
-  return display;
-}
-
-function resetCompareMode() {
-  listingsCompareMode = false;
-  listingsCompareDisplay = null;
-  const btn = document.getElementById('compareBtn');
-  if (btn) { btn.classList.remove('active'); btn.disabled = !listingsPrevRunId; }
-}
-
-async function toggleCompareMode() {
-  if (!listingsCurrentCx || !listingsCurrentRunId || !listingsPrevRunId) return;
-  const btn = document.getElementById('compareBtn');
-
-  if (listingsCompareMode) {
-    listingsCompareMode = false;
-    listingsCompareDisplay = null;
-    btn.classList.remove('active');
-    renderListingsTable();
-    return;
-  }
-
-  if (listingsComparePrevRunId !== listingsPrevRunId) {
-    btn.disabled = true;
-    const { data, error } = await sb.from('apt_listings')
-      .select('*')
-      .eq('run_id', listingsPrevRunId)
-      .eq('complex_number', listingsCurrentCx);
-    btn.disabled = false;
-    if (error) { toast('비교 데이터 로드 실패: ' + error.message, 'err'); return; }
-    listingsComparePrevList = data || [];
-    listingsComparePrevRunId = listingsPrevRunId;
-  }
-
-  listingsCompareDisplay = buildCompareDisplayList(listingsArticles, listingsComparePrevList);
-  listingsCompareMode = true;
-  btn.classList.add('active');
-  renderListingsTable();
 }
 </script>
 </body>
